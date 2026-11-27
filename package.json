@@ -1,8 +1,8 @@
 {
-  "name": "mcp-server-example",
-  "version": "0.4.0",
-  "mcpName": "io.github.borgels/mcp-server-example",
-  "description": "Unofficial MCP server for the Example API.",
+  "name": "mcp-server-synsbasen",
+  "version": "0.1.0",
+  "mcpName": "io.github.borgels/mcp-server-synsbasen",
+  "description": "Unofficial MCP server for the Synsbasen API: Danish vehicle data from the Motor Register, inspections, insurance and liens.",
   "type": "module",
   "main": "./dist/transports/stdio.js",
   "exports": {
@@ -20,7 +20,7 @@
     ".env.example"
   ],
   "bin": {
-    "mcp-server-example": "./dist/transports/stdio.js"
+    "mcp-server-synsbasen": "./dist/transports/stdio.js"
   },
   "scripts": {
     "build": "tsup src/transports/stdio.ts src/transports/http.ts src/gateway.ts --format esm --dts --clean --sourcemap",
@@ -33,12 +33,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/borgels/mcp-server-example.git"
+    "url": "git+https://github.com/borgels/mcp-server-synsbasen.git"
   },
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "example"
+    "synsbasen",
+    "dmr",
+    "vehicles",
+    "denmark"
   ],
   "author": "",
   "license": "FSL-1.1-ALv2",
@@ -46,9 +49,9 @@
     "node": ">=22"
   },
   "bugs": {
-    "url": "https://github.com/borgels/mcp-server-example/issues"
+    "url": "https://github.com/borgels/mcp-server-synsbasen/issues"
   },
-  "homepage": "https://github.com/borgels/mcp-server-example#readme",
+  "homepage": "https://github.com/borgels/mcp-server-synsbasen#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^4.6.7"

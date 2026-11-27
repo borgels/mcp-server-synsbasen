@@ -1,11 +1,11 @@
 import { ConfigError, readEnvBoolean, readEnvInteger, readEnvString, type Env } from '../config-env.js';
-import { ExampleHttpError, describeUrl, parseRetryAfterMs, requestIdFrom, SecretRedactor, UpstreamRedirectError } from '../errors.js';
+import { SynsbasenHttpError, describeUrl, parseRetryAfterMs, requestIdFrom, SecretRedactor, UpstreamRedirectError } from '../errors.js';
 import { USER_AGENT } from '../version.js';
 
-export interface ExampleClientOptions {
-  /** API key. When omitted, read from EXAMPLE_API_KEY in `credentialEnv`. */
+export interface SynsbasenClientOptions {
+  /** API key. When omitted, read from SYNSBASEN_API_KEY in `credentialEnv`. */
   apiKey?: string;
-  /** API base URL. When omitted, read from EXAMPLE_BASE_URL in `credentialEnv`. */
+  /** API base URL. When omitted, read from SYNSBASEN_BASE_URL in `credentialEnv`, else DEFAULT_BASE_URL. */
   baseUrl?: string;
   /**
    * Where omitted credentials (apiKey, baseUrl) are read from. Defaults to
@@ -14,11 +14,11 @@ export interface ExampleClientOptions {
    */
   credentialEnv?: Env;
   fetchImpl?: typeof fetch;
-  /** Per-attempt timeout covering headers and body (default 30 s, env EXAMPLE_TIMEOUT_MS). */
+  /** Per-attempt timeout covering headers and body (default 30 s, env SYNSBASEN_TIMEOUT_MS). */
   timeoutMs?: number;
-  /** Maximum number of concurrent upstream requests from this client (default 4, env EXAMPLE_MAX_CONCURRENCY). */
+  /** Maximum number of concurrent upstream requests from this client (default 4, env SYNSBASEN_MAX_CONCURRENCY). */
   maxConcurrency?: number;
-  /** Largest successful response body read, in bytes (default 10 MB, env EXAMPLE_MAX_RESPONSE_BYTES). */
+  /** Largest successful response body read, in bytes (default 10 MB, env SYNSBASEN_MAX_RESPONSE_BYTES). */
   maxResponseBytes?: number;
   /** Total attempts for idempotent GETs on 429/502/503/504 and transient network errors (default 3). */
   maxAttempts?: number;
@@ -30,25 +30,29 @@ export interface ExampleClientOptions {
    * the response is returned to the caller instead.
    */
   retryBudgetMs?: number;
-  /** Allow a base URL outside UPSTREAM_HOST_SUFFIXES (env EXAMPLE_ALLOW_CUSTOM_BASE_URL=true). */
+  /** Allow a base URL outside UPSTREAM_HOST_SUFFIXES (env SYNSBASEN_ALLOW_CUSTOM_BASE_URL=true). */
   allowCustomBaseUrl?: boolean;
   /** Injectable for tests. */
   sleep?: (ms: number) => Promise<void>;
 }
 
-export type QueryValue = string | number | boolean | null | undefined;
+/** A query value; an array is sent as one parameter per entry (`expand[]=a&expand[]=b`). */
+export type QueryValue = string | number | boolean | null | undefined | readonly string[];
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
-/** Header that carries the API key. Change it to match the upstream API; error text redaction follows it. */
-export const API_KEY_HEADER = 'X-API-Key';
+/** Header that carries the API key, as `Bearer <key>`; error text redaction follows it. */
+export const API_KEY_HEADER = 'Authorization';
+
+/** The one address of the Synsbasen API (version 1). */
+export const DEFAULT_BASE_URL = 'https://api.synsbasen.dk/v1';
 
 /**
  * Hosts the API key may be sent to (exact host or any subdomain), e.g.
  * ['api.vendor.com']. Empty: any https host. Loopback http is always allowed
  * for local mocks.
  */
-export const UPSTREAM_HOST_SUFFIXES: readonly string[] = [];
+export const UPSTREAM_HOST_SUFFIXES: readonly string[] = ['api.synsbasen.dk'];
 
 export const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const MAX_RESPONSE_BYTES_LIMIT = 100 * 1024 * 1024;
@@ -104,7 +108,16 @@ export interface UpstreamClient {
   get<T>(path: string, query?: Record<string, QueryValue>): Promise<T>;
   post<T>(path: string, body?: unknown, query?: Record<string, QueryValue>): Promise<T>;
   patch<T>(path: string, body?: unknown): Promise<T>;
+  delete<T>(path: string): Promise<T>;
+  /**
+   * A POST that only reads: Synsbasen's search endpoints (`.../search`) and the plate recognition from an image
+   * (`/vehicles/by_image`). The only POST a read-only tool may make.
+   */
+  search<T>(path: string, body: unknown): Promise<T>;
 }
+
+/** The POST paths that only read (UpstreamClient.search). */
+const READING_POST = /^\/(?:[a-z_]+\/search|vehicles\/by_image)$/;
 
 /**
  * A view of the client that only allows GET. A read-only tool that needs a
@@ -119,6 +132,8 @@ export function readOnlyClient(client: UpstreamClient, toolName: string): Upstre
     get: (path, query) => client.get(path, query),
     post: refuse('POST'),
     patch: refuse('PATCH'),
+    delete: refuse('DELETE'),
+    search: (path, body) => client.search(path, body),
   };
 }
 
@@ -135,7 +150,7 @@ export function readOnlyClient(client: UpstreamClient, toolName: string): Upstre
  * errors raised by the client, and the audit and tool results of calls
  * made through it, are redacted with it.
  */
-export class ExampleClient implements UpstreamClient {
+export class SynsbasenClient implements UpstreamClient {
   readonly redactor: SecretRedactor;
   private readonly apiKey?: string;
   readonly baseUrl?: string;
@@ -148,30 +163,25 @@ export class ExampleClient implements UpstreamClient {
   private readonly semaphore: Semaphore;
   private readonly sleep: (ms: number) => Promise<void>;
 
-  constructor(options: ExampleClientOptions = {}) {
+  constructor(options: SynsbasenClientOptions = {}) {
     const credentialEnv = options.credentialEnv ?? process.env;
-    this.apiKey = options.apiKey ?? readEnvString('EXAMPLE_API_KEY', credentialEnv);
+    this.apiKey = options.apiKey ?? readEnvString('SYNSBASEN_API_KEY', credentialEnv);
     this.redactor = new SecretRedactor().addHeader(API_KEY_HEADER).addSecret(this.apiKey);
-    const baseUrl = options.baseUrl ?? readEnvString('EXAMPLE_BASE_URL', credentialEnv);
-    if (baseUrl !== undefined) {
-      this.baseUrl = trimTrailingSlash(baseUrl);
-      assertSafeBaseUrl(
-        this.baseUrl,
-        options.allowCustomBaseUrl ?? readEnvBoolean('EXAMPLE_ALLOW_CUSTOM_BASE_URL', false),
-      );
-    }
+    const baseUrl = options.baseUrl ?? readEnvString('SYNSBASEN_BASE_URL', credentialEnv) ?? DEFAULT_BASE_URL;
+    this.baseUrl = trimTrailingSlash(baseUrl);
+    assertSafeBaseUrl(this.baseUrl, options.allowCustomBaseUrl ?? readEnvBoolean('SYNSBASEN_ALLOW_CUSTOM_BASE_URL', false));
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.timeoutMs = intOption('timeoutMs', options.timeoutMs, 'EXAMPLE_TIMEOUT_MS', 30_000, 1, MAX_TIMER_MS);
+    this.timeoutMs = intOption('timeoutMs', options.timeoutMs, 'SYNSBASEN_TIMEOUT_MS', 30_000, 1, MAX_TIMER_MS);
     this.maxResponseBytes = intOption(
       'maxResponseBytes',
       options.maxResponseBytes,
-      'EXAMPLE_MAX_RESPONSE_BYTES',
+      'SYNSBASEN_MAX_RESPONSE_BYTES',
       DEFAULT_MAX_RESPONSE_BYTES,
       1,
       MAX_RESPONSE_BYTES_LIMIT,
     );
     this.semaphore = new Semaphore(
-      intOption('maxConcurrency', options.maxConcurrency, 'EXAMPLE_MAX_CONCURRENCY', 4, 1, 64),
+      intOption('maxConcurrency', options.maxConcurrency, 'SYNSBASEN_MAX_CONCURRENCY', 4, 1, 64),
     );
     this.maxAttempts = intOption('maxAttempts', options.maxAttempts, undefined, 3, 1, 10);
     this.retryBaseDelayMs = intOption('retryBaseDelayMs', options.retryBaseDelayMs, undefined, 500, 0, 60_000);
@@ -191,15 +201,30 @@ export class ExampleClient implements UpstreamClient {
     return this.request<T>('PATCH', this.buildUrl(path), body);
   }
 
+  async delete<T>(path: string): Promise<T> {
+    return this.request<T>('DELETE', this.buildUrl(path));
+  }
+
+  async search<T>(path: string, body: unknown): Promise<T> {
+    if (!READING_POST.test(path)) {
+      throw new Error('Refused: only a search or a plate recognition may be sent as a reading POST.');
+    }
+    return this.request<T>('POST', this.buildUrl(path), body);
+  }
+
   buildUrl(path: string, query?: Record<string, QueryValue>): string {
     if (!this.baseUrl) {
-      throw new Error('Missing EXAMPLE_BASE_URL. Set it in the MCP server environment.');
+      throw new Error('Missing SYNSBASEN_BASE_URL. Set it in the MCP server environment.');
     }
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const url = new URL(`${this.baseUrl}${normalizedPath}`);
 
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value === undefined || value === null || value === '') {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        for (const entry of value) url.searchParams.append(key, String(entry));
         continue;
       }
       url.searchParams.set(key, String(value));
@@ -210,12 +235,13 @@ export class ExampleClient implements UpstreamClient {
 
   private headers(): Record<string, string> {
     if (!this.apiKey) {
-      throw new Error('Missing EXAMPLE_API_KEY. Set it in the MCP server environment.');
+      throw new Error('Missing SYNSBASEN_API_KEY. Set it in the MCP server environment.');
     }
     return {
       Accept: 'application/json',
       'User-Agent': USER_AGENT,
-      [API_KEY_HEADER]: this.apiKey,
+      'Content-Type': 'application/json',
+      [API_KEY_HEADER]: `Bearer ${this.apiKey}`,
     };
   }
 
@@ -223,7 +249,6 @@ export class ExampleClient implements UpstreamClient {
     const headers = this.headers();
     const init: RequestInit = { method, headers };
     if (body !== undefined) {
-      headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body);
     }
 
@@ -239,7 +264,7 @@ export class ExampleClient implements UpstreamClient {
       if (!response.ok) {
         // The body is the vendor's text: it is never read into an error, a result or an audit record.
         await discardBody(response);
-        throw new ExampleHttpError({
+        throw new SynsbasenHttpError({
           status: response.status,
           url: describeUrl(url),
           retryAfter: response.headers.get('retry-after') ?? undefined,
@@ -329,12 +354,12 @@ export class ExampleClient implements UpstreamClient {
   // Our own words with the method only: the address is configuration and is not quoted.
   private transportError(method: HttpMethod, _url: string, error: unknown): Error {
     if (isTimeoutError(error)) {
-      return new Error(this.redactor.redact(`Example API request timed out after ${this.timeoutMs} ms (${method}).`));
+      return new Error(this.redactor.redact(`Synsbasen API request timed out after ${this.timeoutMs} ms (${method}).`));
     }
     // Only a system error code (ECONNREFUSED, ENOTFOUND, ...) from the cause, never its message.
     const code = (error instanceof Error ? (error.cause as { code?: unknown } | undefined)?.code : undefined) ?? undefined;
     const shown = typeof code === 'string' && SHOWN_NETWORK_CODES.has(code) ? ` (${code})` : '';
-    return new Error(this.redactor.redact(`Network error calling the Example API (${method})${shown}.`), { cause: error });
+    return new Error(this.redactor.redact(`Network error calling the Synsbasen API (${method})${shown}.`), { cause: error });
   }
 }
 
@@ -392,8 +417,8 @@ function isRedirect(status: number): boolean {
 /** The redirect's Location is the vendor's text and is never quoted; only the status and our own request. */
 function redirectRefusedMessage(response: Response, method: HttpMethod, _url: string): string {
   return (
-    `Example API responded with a redirect (HTTP ${response.status}) for ${method}; ` +
-    'redirects are not followed. Check EXAMPLE_BASE_URL.'
+    `Synsbasen API responded with a redirect (HTTP ${response.status}) for ${method}; ` +
+    'redirects are not followed. Check SYNSBASEN_BASE_URL.'
   );
 }
 
@@ -473,7 +498,7 @@ async function readResponseBody(response: Response, maxBytes: number): Promise<u
   const declared = Number(response.headers.get('content-length') ?? 0);
   if (Number.isFinite(declared) && declared > maxBytes) {
     await discardBody(response);
-    throw new Error(`Example API response of ${declared} bytes exceeds the ${maxBytes} byte limit (EXAMPLE_MAX_RESPONSE_BYTES).`);
+    throw new Error(`Synsbasen API response of ${declared} bytes exceeds the ${maxBytes} byte limit (SYNSBASEN_MAX_RESPONSE_BYTES).`);
   }
   let read: { bytes: Uint8Array; exceeded: boolean };
   try {
@@ -484,11 +509,11 @@ async function readResponseBody(response: Response, maxBytes: number): Promise<u
     if (isTimeoutError(error) || isTransientNetworkError(error)) {
       throw error;
     }
-    throw new Error('The Example API response could not be read.');
+    throw new Error('The Synsbasen API response could not be read.');
   }
   const { bytes, exceeded } = read;
   if (exceeded) {
-    throw new Error(`Example API response exceeds the ${maxBytes} byte limit (EXAMPLE_MAX_RESPONSE_BYTES).`);
+    throw new Error(`Synsbasen API response exceeds the ${maxBytes} byte limit (SYNSBASEN_MAX_RESPONSE_BYTES).`);
   }
   const text = new TextDecoder().decode(bytes);
   if (!text) {
@@ -518,11 +543,11 @@ function assertSafeBaseUrl(baseUrl: string, allowCustomHost: boolean): void {
   try {
     parsed = new URL(baseUrl);
   } catch {
-    throw new ConfigError('EXAMPLE_BASE_URL is not a valid URL.');
+    throw new ConfigError('SYNSBASEN_BASE_URL is not a valid URL.');
   }
 
   if (parsed.username || parsed.password || baseUrl.includes('?') || baseUrl.includes('#')) {
-    throw new ConfigError('EXAMPLE_BASE_URL must not contain credentials, a query string or a fragment.');
+    throw new ConfigError('SYNSBASEN_BASE_URL must not contain credentials, a query string or a fragment.');
   }
 
   if (isLocalHost(parsed.hostname) && (parsed.protocol === 'http:' || parsed.protocol === 'https:')) {
@@ -547,8 +572,8 @@ function assertSafeBaseUrl(baseUrl: string, allowCustomHost: boolean): void {
 
   // The host is not quoted: it is a configuration value.
   throw new ConfigError(
-    `Refusing to send the API key to that host: EXAMPLE_BASE_URL must be on ${UPSTREAM_HOST_SUFFIXES.join(', ')}. ` +
-      'Set EXAMPLE_ALLOW_CUSTOM_BASE_URL=true to allow another host.',
+    `Refusing to send the API key to that host: SYNSBASEN_BASE_URL must be on ${UPSTREAM_HOST_SUFFIXES.join(', ')}. ` +
+      'Set SYNSBASEN_ALLOW_CUSTOM_BASE_URL=true to allow another host.',
   );
 }
 

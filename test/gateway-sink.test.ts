@@ -1,7 +1,7 @@
 // The sink check (README, "Threat model"): nothing that leaves a gateway holds a piece of 6 characters of the key.
-// Every output is checked in its final form; the round-7 counterexamples and keys spliced from real outputs.
+// Every output is checked in its final form; the round-7 countersynsbasens and keys spliced from real outputs.
 import { describe, expect, it } from 'vitest';
-import { createExampleGateway } from '../src/gateway.js';
+import { createSynsbasenGateway } from '../src/gateway.js';
 import { visibleTexts } from '../src/key-admission.js';
 import { BASE } from './helpers.js';
 
@@ -25,7 +25,7 @@ function leaked(key: string, outputs: unknown[]): string[] {
 
 const upstream: typeof fetch = async input => {
   const path = (String(input).split('?')[0] ?? '').slice(BASE.length);
-  if (path === '/items/i1') return json({ id: 'i1', name: 'Item one', status: 'open', riskLevel: 'low' });
+  if (path === '/test_centers/i1') return json({ id: 'i1', name: 'Item one', status: 'open', riskLevel: 'low' });
   if (path === '/items') return json({ id: 'i2', name: 'n' }, 201);
   return json({ message: 'no stub' }, 404);
 };
@@ -33,9 +33,9 @@ const upstream: typeof fetch = async input => {
 /** Every output of a normal session with this key, or the refusal when the key is not admitted. */
 async function outputs(apiKey: string): Promise<{ refused?: string; outputs: unknown[] }> {
   const records: unknown[] = [];
-  let gw: ReturnType<typeof createExampleGateway>;
+  let gw: ReturnType<typeof createSynsbasenGateway>;
   try {
-    gw = createExampleGateway({
+    gw = createSynsbasenGateway({
       apiKey,
       baseUrl: BASE,
       fetchImpl: upstream,
@@ -46,17 +46,17 @@ async function outputs(apiKey: string): Promise<{ refused?: string; outputs: unk
     return { refused: (error as Error).message, outputs: [(error as Error).message, (error as Error).name] };
   }
   const results = [
-    await gw.callTool('get_item', { itemId: 'i1' }, { caller: 'person-1', requestId: 'r1' }),
-    await gw.callTool('create_item', { name: 'n' }, { caller: 'person-1', requestId: 'r2' }),
-    await gw.callTool('get_item', { itemId: 'missing' }),
+    await gw.callTool('get_test_center', { testCenterId: 'i1' }, { caller: 'person-1', requestId: 'r1' }),
+    await gw.callTool('watch_vehicle', { vehicleId: 'n' }, { caller: 'person-1', requestId: 'r2' }),
+    await gw.callTool('get_test_center', { testCenterId: 'missing' }),
     await gw.callTool('no_such_tool', {}),
-    await gw.callTool('get_item', { unknown: 1 }),
+    await gw.callTool('get_test_center', { unknown: 1 }),
   ];
   return { outputs: [gw.tools, ...results, ...records] };
 }
 
 describe('the sink check', () => {
-  it('holds for the round-7 counterexamples', async () => {
+  it('holds for the round-7 countersynsbasens', async () => {
     for (const apiKey of [
       'riskLevelQz7pX2vK9mWb',
       'Zq7pX2visError9mWb4TnR',
@@ -73,12 +73,12 @@ describe('the sink check', () => {
 
   it('refuses a key that is not printable ASCII before anything is built from it', () => {
     for (const apiKey of ['URI malformedQz7pX2vK9mWb\uD800', 'Zq7pX2vK9mWb4TnRé', 'Zq7pX2 vK9mWb4TnR8y']) {
-      expect(() => createExampleGateway({ apiKey, baseUrl: BASE }), apiKey).toThrow(/key was refused/);
+      expect(() => createSynsbasenGateway({ apiKey, baseUrl: BASE }), apiKey).toThrow(/key was refused/);
     }
   });
 
   it('refuses a key that shares a piece with the tool list', () => {
-    expect(() => createExampleGateway({ apiKey: 'riskLevelQz7pX2vK9mWb', baseUrl: BASE })).toThrow(/key was refused/);
+    expect(() => createSynsbasenGateway({ apiKey: 'riskLevelQz7pX2vK9mWb', baseUrl: BASE })).toThrow(/key was refused/);
   });
 
   it('holds for keys spliced from the outputs of a normal session', async () => {
@@ -108,17 +108,17 @@ describe('the sink check', () => {
 
 describe('failure texts', () => {
   it('replaces texts in failure lists of a successful answer, for reads and writes', async () => {
-    const gw = createExampleGateway({
+    const gw = createSynsbasenGateway({
       apiKey: PLAIN,
       baseUrl: BASE,
       maxAttempts: 1,
       policy: { enableWrites: true },
       fetchImpl: async () => json({ data: { failures: ['Vendor diagnostic'], errors: ['Vendor diagnostic'] } }),
     });
-    for (const result of [await gw.callTool('get_item', { itemId: 'x' }), await gw.callTool('create_item', { name: 'n' })]) {
+    for (const result of [await gw.callTool('get_test_center', { testCenterId: 'x' }), await gw.callTool('watch_vehicle', { vehicleId: 'n' })]) {
       expect(JSON.stringify(result)).not.toContain('Vendor');
       expect(result.structuredContent).toMatchObject({
-        data: { failures: [{ message: 'Example API request failed.' }], errors: [{ message: 'Example API request failed.' }] },
+        data: { failures: [{ message: 'Synsbasen API request failed.' }], errors: [{ message: 'Synsbasen API request failed.' }] },
       });
     }
   });
@@ -134,7 +134,7 @@ describe('round 8', () => {
     ] as const) {
       let caught: Error | undefined;
       try {
-        createExampleGateway({ apiKey, baseUrl });
+        createSynsbasenGateway({ apiKey, baseUrl });
       } catch (error) {
         caught = error as Error;
       }
@@ -152,32 +152,49 @@ describe('round 8', () => {
       { data: { failures: [{ reason: 'Vendor diagnostic' }], errors: [{ code: 'Vendor diagnostic' }] } },
       { failures: [{ code: 'Vendor diagnostic' }] },
     ]) {
-      const gw = createExampleGateway({
+      const gw = createSynsbasenGateway({
         apiKey: PLAIN,
         baseUrl: BASE,
         maxAttempts: 1,
         policy: { enableWrites: true },
         fetchImpl: async () => json(body),
       });
-      for (const result of [await gw.callTool('get_item', { itemId: 'x' }), await gw.callTool('create_item', { name: 'n' })]) {
+      for (const result of [await gw.callTool('get_test_center', { testCenterId: 'x' }), await gw.callTool('watch_vehicle', { vehicleId: 'n' })]) {
         expect(JSON.stringify(result)).not.toContain('Vendor');
-        expect(JSON.stringify(result.structuredContent)).toContain('"message":"Example API request failed."');
+        expect(JSON.stringify(result.structuredContent)).toContain('"message":"Synsbasen API request failed."');
       }
     }
   });
 
-  it('quotes no configured address in network, timeout or redirect errors', async () => {
-    const ADDRESS = 'https://api.vendor-name.invalid/v1';
+  it('refuses any address but Synsbasen\'s own, without quoting it', () => {
+    for (const baseUrl of [
+      'https://api.vendor-name.invalid/v1',
+      'https://evil.api.synsbasen.dk/v1',
+      'http://127.0.0.1:8080/v1',
+      'http://api.synsbasen.dk/v1',
+    ]) {
+      let message = '';
+      try {
+        createSynsbasenGateway({ apiKey: PLAIN, baseUrl, allowCustomBaseUrl: true });
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message, baseUrl).toContain('only to https://api.synsbasen.dk');
+      expect(message, baseUrl).not.toMatch(/vendor-name|evil|127\.0\.0\.1|http:\/\/api/);
+    }
+  });
+
+  it('quotes no address in network, timeout or redirect errors', async () => {
     for (const fetchImpl of [
       async () => {
         throw new TypeError('fetch failed', { cause: Object.assign(new Error('x'), { code: 'ENOTFOUND' }) });
       },
       async () => new Response(null, { status: 302, headers: { location: 'https://elsewhere.invalid/' } }),
     ] as Array<typeof fetch>) {
-      const gw = createExampleGateway({ apiKey: PLAIN, baseUrl: ADDRESS, allowCustomBaseUrl: true, maxAttempts: 1, fetchImpl });
-      const result = await gw.callTool('get_item', { itemId: 'x' });
+      const gw = createSynsbasenGateway({ apiKey: PLAIN, maxAttempts: 1, fetchImpl });
+      const result = await gw.callTool('get_test_center', { testCenterId: 'x' });
       expect(result.isError).toBe(true);
-      expect(JSON.stringify(result)).not.toContain('vendor-name');
+      expect(JSON.stringify(result)).not.toMatch(/synsbasen\.dk|elsewhere/);
     }
   });
 });
