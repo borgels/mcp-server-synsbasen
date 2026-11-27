@@ -166,18 +166,35 @@ describe('round 8', () => {
     }
   });
 
-  it('quotes no configured address in network, timeout or redirect errors', async () => {
-    const ADDRESS = 'https://api.vendor-name.invalid/v1';
+  it('refuses any address but Synsbasen\'s own, without quoting it', () => {
+    for (const baseUrl of [
+      'https://api.vendor-name.invalid/v1',
+      'https://evil.api.synsbasen.dk/v1',
+      'http://127.0.0.1:8080/v1',
+      'http://api.synsbasen.dk/v1',
+    ]) {
+      let message = '';
+      try {
+        createSynsbasenGateway({ apiKey: PLAIN, baseUrl, allowCustomBaseUrl: true });
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message, baseUrl).toContain('only to https://api.synsbasen.dk');
+      expect(message, baseUrl).not.toMatch(/vendor-name|evil|127\.0\.0\.1|http:\/\/api/);
+    }
+  });
+
+  it('quotes no address in network, timeout or redirect errors', async () => {
     for (const fetchImpl of [
       async () => {
         throw new TypeError('fetch failed', { cause: Object.assign(new Error('x'), { code: 'ENOTFOUND' }) });
       },
       async () => new Response(null, { status: 302, headers: { location: 'https://elsewhere.invalid/' } }),
     ] as Array<typeof fetch>) {
-      const gw = createSynsbasenGateway({ apiKey: PLAIN, baseUrl: ADDRESS, allowCustomBaseUrl: true, maxAttempts: 1, fetchImpl });
+      const gw = createSynsbasenGateway({ apiKey: PLAIN, maxAttempts: 1, fetchImpl });
       const result = await gw.callTool('get_test_center', { testCenterId: 'x' });
       expect(result.isError).toBe(true);
-      expect(JSON.stringify(result)).not.toContain('vendor-name');
+      expect(JSON.stringify(result)).not.toMatch(/synsbasen\.dk|elsewhere/);
     }
   });
 });

@@ -252,6 +252,11 @@ export function createSynsbasenGateway(options: SynsbasenGatewayOptions) {
 
 function buildGateway(options: SynsbasenGatewayOptions, apiKey: string) {
   const baseUrl = options.baseUrl === undefined ? DEFAULT_BASE_URL : requiredCredential(options, 'baseUrl');
+  // A gateway sends the key to Synsbasen's own origin only: no other host, no subdomain, no loopback, whatever the
+  // host passes. Tests and hosts stand in for Synsbasen with fetchImpl, never with another address.
+  if (originOf(baseUrl) !== SYNSBASEN_ORIGIN) {
+    throw new ConfigError(`createSynsbasenGateway sends the key only to ${SYNSBASEN_ORIGIN}; options.baseUrl must be on it.`);
+  }
   const { policy: hostPolicy, ...clientOptions } = options;
   const policy =
     hostPolicy === undefined ? undefined : resolveInstancePolicy(hostPolicy, SYNSBASEN_TOOLS.map(tool => tool.name));
@@ -266,7 +271,7 @@ function buildGateway(options: SynsbasenGatewayOptions, apiKey: string) {
     baseUrl,
     credentialEnv: {},
     // Under a host's policy nothing is read from the environment, this switch included.
-    ...(policy ? { allowCustomBaseUrl: clientOptions.allowCustomBaseUrl ?? false } : {}),
+    allowCustomBaseUrl: false,
   });
   const redactor: SecretRedactor = client.redactor;
   // Every call in a scope of its own, with or without a host policy: a call made from inside another
@@ -337,6 +342,18 @@ function buildGateway(options: SynsbasenGatewayOptions, apiKey: string) {
       if (error instanceof ActAsRefusedError) return actAsRefused(error.refusal);
       return errorResult(formatUnknownError(error, redactor), failureMetadata(error));
     }
+  }
+}
+
+/** The only origin a gateway sends the key to. */
+const SYNSBASEN_ORIGIN = new URL(DEFAULT_BASE_URL).origin;
+
+/** The origin of a URL, or undefined when it is not one. */
+function originOf(value: string): string | undefined {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
   }
 }
 

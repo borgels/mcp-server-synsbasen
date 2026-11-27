@@ -116,7 +116,7 @@ export async function identifyFromImage(
 export interface SearchInput {
   query?: Record<string, unknown>;
   method?: 'SELECT' | 'COUNT' | 'PERCENTAGE';
-  select?: readonly string[];
+  select?: string | readonly string[];
   groupBy?: string | readonly string[];
   sorts?: readonly string[];
   percentageType?: string;

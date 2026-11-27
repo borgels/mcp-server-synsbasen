@@ -139,22 +139,27 @@ const expandSchema = z
   );
 
 const ATTRIBUTE = /^[a-z][a-z0-9_.]{0,99}$/;
+/** An attribute or an aggregate expression over attributes, as Synsbasen documents them: `AVG(mileage)`, `YEAR(first_registration_date)`. */
+const EXPRESSION = /^[A-Za-z][A-Za-z0-9_.(), *]{0,199}$/;
 const scalar = z.union([z.string().max(500), z.number(), z.boolean(), z.null()]);
 const searchShape = {
   query: z
-    .record(z.string().regex(ATTRIBUTE), z.union([scalar, z.array(z.union([z.string().max(500), z.number()])).max(200)]))
+    .record(z.string().regex(ATTRIBUTE), z.union([scalar, z.array(z.union([z.string().max(500), z.number(), z.null()])).max(200)]))
     .optional()
     .describe(
       'Filters: an attribute name joined with a predicate, e.g. {"brand_eq":"Volvo","model_year_gteq":2020}. ' +
         'Predicates: _eq, _not_eq, _start, _end, _cont, _i_cont, _matches, _in, _not_in, _lt, _lteq, _gt, _gteq, ' +
-        '_between, _null, _not_null, _true, _false (and _or_null variants).',
+        '_between (a [from, to] pair; null leaves an end open), _null, _not_null, _true, _false (and _or_null variants).',
     ),
   method: z.enum(['SELECT', 'COUNT', 'PERCENTAGE']).optional().describe('SELECT (default) returns rows; COUNT and PERCENTAGE aggregate.'),
-  select: z.array(z.string().regex(ATTRIBUTE)).max(100).optional().describe('Attributes to return.'),
-  groupBy: z
-    .union([z.string().regex(ATTRIBUTE), z.array(z.string().regex(ATTRIBUTE)).max(10)])
+  select: z
+    .union([z.string().regex(EXPRESSION), z.array(z.string().regex(EXPRESSION)).max(100)])
     .optional()
-    .describe('Attribute(s) to group a COUNT or PERCENTAGE by.'),
+    .describe('Attributes or aggregate expressions to return, e.g. ["brand", "AVG(mileage)"].'),
+  groupBy: z
+    .union([z.string().regex(EXPRESSION), z.array(z.string().regex(EXPRESSION)).max(10)])
+    .optional()
+    .describe('Attribute(s) or expressions to group by, e.g. "YEAR(first_registration_date)".'),
   sorts: z.array(z.string().max(100)).max(10).optional().describe('Sort order, e.g. ["first_registration_date DESC"] or ["random"].'),
   percentageType: z.string().trim().max(50).optional().describe('How PERCENTAGE is computed, as Synsbasen documents it.'),
   page: z.number().int().min(1).max(100_000).optional().describe('Page, from 1.'),

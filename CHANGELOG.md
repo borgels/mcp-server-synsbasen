@@ -8,7 +8,9 @@
   Property Register, valuations, leasing periods, inspections, test centres,
   the model catalogue, body types, dealer plates and the token balance; and
   the watch list (list, check, watch, unwatch; the last two are writes).
+- Audit: registration numbers and VINs are hashed, also when given in an id
+  field; search filters are logged by attribute name only.
 - Gateway (`./gateway`): `apiKey` is required, `baseUrl` defaults to
   `https://api.synsbasen.dk/v1`, and the key is sent only to `api.synsbasen.dk`
-  as `Authorization: Bearer <key>`. Errors carry only the HTTP status and the
+  as `Authorization: Bearer <key>`; a gateway refuses any other address. Errors carry only the HTTP status and the
   vendor's request id.

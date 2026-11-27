@@ -136,8 +136,19 @@ function errorFields(summary: ReturnType<typeof auditErrorSummary>) {
   return { httpStatus: summary.httpStatus, error: summary.message };
 }
 
-/** Identifier fields logged in clear text: Synsbasen's own numeric ids, and the level or kind of a lookup. */
-const ID_FIELDS = ['vehicleId', 'inspectionId', 'testCenterId', 'bodyTypeId', 'id', 'level', 'method'] as const;
+/**
+ * Synsbasen's own numeric ids, logged in clear text only when they are decimal ids. Any other value (a registration
+ * number or a VIN given in the wrong field, say) is hashed like free text, so it never lands in the log.
+ */
+const ID_FIELDS = ['vehicleId', 'inspectionId', 'testCenterId', 'bodyTypeId', 'id'] as const;
+
+/** Fields from a fixed list of our own (enums), logged in clear text. */
+const ENUM_FIELDS = ['level', 'method'] as const;
+
+/** A decimal id as Synsbasen issues them: a whole number, or 1-19 digits as text. */
+function isDecimalId(value: unknown): boolean {
+  return (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) || (typeof value === 'string' && /^\d{1,19}$/.test(value));
+}
 
 /**
  * Hashed, never logged in clear text: a registration number or VIN can point to a person through the vehicle's
@@ -158,7 +169,17 @@ export function auditTarget(input: unknown): Record<string, unknown> | undefined
   const target: Record<string, unknown> = {};
 
   for (const field of ID_FIELDS) {
-    if (value[field] !== undefined) {
+    const id = value[field];
+    if (id === undefined) continue;
+    if (isDecimalId(id)) {
+      target[field] = id;
+    } else {
+      target[`${field}Sha256`] = hashValue(typeof id === 'string' ? id : JSON.stringify(id) ?? '');
+    }
+  }
+
+  for (const field of ENUM_FIELDS) {
+    if (typeof value[field] === 'string') {
       target[field] = value[field];
     }
   }

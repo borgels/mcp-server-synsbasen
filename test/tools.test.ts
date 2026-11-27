@@ -106,6 +106,20 @@ describe('MCP tool surface', () => {
     expect((lines[2]?.target as Record<string, unknown>).queryFields).toEqual(['vin_eq']);
   });
 
+  it('hashes an id field that is not a decimal id, so a plate in the wrong field never lands in the log', async () => {
+    process.env.SYNSBASEN_AUDIT_LOG = join(dir, 'audit.jsonl');
+    const { mcpClient } = await connect();
+    await mcpClient.callTool({ name: 'synsbasen_get_vehicle', arguments: { vehicleId: 'AB12345' } });
+    await mcpClient.callTool({ name: 'synsbasen_get_test_center', arguments: { testCenterId: 'YV1ABCDE123456789' } });
+    await mcpClient.callTool({ name: 'synsbasen_get_test_center', arguments: { testCenterId: 12 } });
+    const lines = auditLines(process.env.SYNSBASEN_AUDIT_LOG);
+    const text = JSON.stringify(lines);
+    expect(text).not.toContain('AB12345');
+    expect(text).not.toContain('YV1ABCDE');
+    expect((lines[0]?.target as Record<string, unknown>).vehicleIdSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(lines.at(-1)?.target).toEqual({ testCenterId: 12 });
+  });
+
   it('refuses an unwritable audit log path at startup, but not per server instance', async () => {
     process.env.SYNSBASEN_AUDIT_LOG = join(dir, 'missing-dir', 'audit.jsonl');
     expect(() => validateStartupConfig()).toThrow('SYNSBASEN_AUDIT_LOG');
@@ -220,6 +234,24 @@ describe('Synsbasen requests', () => {
       per_page: 10,
     });
     expect((await gw.callTool('search_vehicles', { query: { 'Bad Name': 1 } })).isError).toBe(true);
+  });
+
+  it('takes aggregate expressions and open-ended ranges in a search', async () => {
+    const { gw, fetchImpl } = gateway({ [`POST ${BASE}/vehicles/search`]: { body: { data: [] } } });
+    const result = await gw.callTool('search_vehicles', {
+      query: { mileage_between: [null, 100000], model_year_between: [2018, null] },
+      method: 'COUNT',
+      select: ['brand', 'AVG(mileage)'],
+      groupBy: 'YEAR(first_registration_date)',
+    });
+    expect(result.isError, JSON.stringify(result.content)).toBeUndefined();
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toEqual({
+      query: { mileage_between: [null, 100000], model_year_between: [2018, null] },
+      method: 'COUNT',
+      select: ['brand', 'AVG(mileage)'],
+      group_by: 'YEAR(first_registration_date)',
+    });
+    expect((await gw.callTool('search_vehicles', { select: ['brand; DROP'] })).isError).toBe(true);
   });
 
   it('identifies a vehicle from an image address or base64, never both', async () => {
