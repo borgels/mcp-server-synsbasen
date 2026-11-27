@@ -4,6 +4,7 @@ import {
   READ_TOOL_ANNOTATIONS,
   UNTRUSTED_CONTENT_NOTE,
   UNTRUSTED_RESULT_NOTE,
+  UNWATCH_ANNOTATIONS,
   WATCH_LIST_ANNOTATIONS,
   type WRITE_TOOL_ANNOTATIONS,
 } from '../synsbasen/annotations.js';
@@ -36,7 +37,11 @@ import {
 } from '../synsbasen/items.js';
 import { checkInputPolicy, checkToolPolicy, isToolDisabled, redactInScope, runInCallScope, validatePolicyConfig } from '../synsbasen/policy.js';
 
-type ToolAnnotations = typeof READ_TOOL_ANNOTATIONS | typeof WRITE_TOOL_ANNOTATIONS | typeof WATCH_LIST_ANNOTATIONS;
+type ToolAnnotations =
+  | typeof READ_TOOL_ANNOTATIONS
+  | typeof WRITE_TOOL_ANNOTATIONS
+  | typeof WATCH_LIST_ANNOTATIONS
+  | typeof UNWATCH_ANNOTATIONS;
 
 /**
  * One upstream request a tool may make: `read` or `write`, the HTTP method
@@ -512,7 +517,7 @@ export const SYNSBASEN_TOOLS: ToolDefinition[] = [
     title: 'Stop Watching Vehicle (Synsbasen)',
     description: 'Take a vehicle (by vehicleId) off the watch list. Requires write access on this instance.',
     inputShape: { vehicleId: idSchema.describe("Synsbasen's vehicle id.") },
-    annotations: WATCH_LIST_ANNOTATIONS,
+    annotations: UNWATCH_ANNOTATIONS,
     returnsUpstreamContent: true,
     summary: 'Vehicle is no longer watched.',
     upstream: [{ access: 'write', method: 'DELETE', path: '/watched_vehicles/{vehicleId}' }],

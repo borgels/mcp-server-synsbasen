@@ -338,10 +338,12 @@ describe('write gate beyond annotations', () => {
 });
 
 describe('gateway export', () => {
-  it('exposes tools without the prefix, reads and two watch list writes, with valid JSON Schemas', () => {
+  it('exposes tools without the prefix, reads, watching as a write and unwatching as destructive, with valid JSON Schemas', () => {
     const risks = Object.fromEntries(synsbasenGatewayTools.map(t => [t.name, [t.riskLevel, t.enabledByDefault]]));
     expect(risks.watch_vehicle).toEqual(['write', false]);
-    expect(risks.unwatch_vehicle).toEqual(['write', false]);
+    expect(risks.unwatch_vehicle).toEqual(['destructive', false]);
+    const unwatch = SYNSBASEN_TOOLS.find(t => t.name === 'synsbasen_unwatch_vehicle')!;
+    expect(unwatch.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: true });
     const notRead = Object.entries(risks)
       .filter(([, [risk]]) => risk !== 'read')
       .map(([name]) => name)

@@ -18,12 +18,22 @@ export const WRITE_TOOL_ANNOTATIONS = {
 } as const;
 
 /**
- * A write that only changes Synsbasen's watch list: it deletes no data, can always be undone with its counterpart,
- * and repeating it leaves the list as it was.
+ * Putting a vehicle on Synsbasen's watch list: it only adds an entry, and repeating it leaves the list as it was.
  */
 export const WATCH_LIST_ANNOTATIONS = {
   readOnlyHint: false,
   destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+} as const;
+
+/**
+ * Taking a vehicle off the watch list: it removes an entry, so it is destructive in MCP's sense, even though
+ * watch_vehicle puts it back and no vehicle data is lost. Repeating it leaves the list as it was.
+ */
+export const UNWATCH_ANNOTATIONS = {
+  readOnlyHint: false,
+  destructiveHint: true,
   idempotentHint: true,
   openWorldHint: true,
 } as const;
