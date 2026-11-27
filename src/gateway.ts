@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import { UNTRUSTED_CONTENT_NOTE } from './synsbasen/annotations.js';
-import { SynsbasenClient, type SynsbasenClientOptions } from './synsbasen/client.js';
+import { DEFAULT_BASE_URL, SynsbasenClient, type SynsbasenClientOptions } from './synsbasen/client.js';
 import {
   isToolDisabled,
   resolveInstancePolicy,
@@ -47,6 +47,8 @@ import {
 
 export type { AuditSink, InstancePolicy } from './synsbasen/policy.js';
 export { ACT_AS_REFUSALS, ACT_AS_TEXTS } from './act-as.js';
+/** Synsbasen's one API address, used when a host gives no baseUrl. */
+export { DEFAULT_BASE_URL as SYNSBASEN_BASE_URL } from './synsbasen/client.js';
 
 /** The person a call is made for (CallContext.actAs; see src/act-as.ts). */
 export type GatewayActAs = ActAs;
@@ -121,8 +123,8 @@ export interface GatewayToolCatalogEntry {
 export interface SynsbasenGatewayOptions extends Omit<SynsbasenClientOptions, 'apiKey' | 'baseUrl' | 'credentialEnv'> {
   /** API key of this instance. Required; never read from the environment. */
   apiKey: string;
-  /** API base URL of this instance. Required; never read from the environment. */
-  baseUrl: string;
+  /** API base URL of this instance; DEFAULT_BASE_URL (Synsbasen's one address) when left out. Never read from the environment. */
+  baseUrl?: string;
   /**
    * Instance policy from the host. When given, the instance reads no policy
    * or audit variables from the environment (see InstancePolicy). A host
@@ -205,8 +207,9 @@ function requiredCredential(options: SynsbasenGatewayOptions, name: 'apiKey' | '
 }
 
 /**
- * Create one gateway instance. `apiKey` and `baseUrl` are required and
- * are the only credentials the instance uses; a missing value fails here.
+ * Create one gateway instance. `apiKey` is required and is the only
+ * credential the instance uses; a missing value fails here. `baseUrl` is
+ * Synsbasen's own address unless a host gives another (tests, a proxy).
  */
 export function createSynsbasenGateway(options: SynsbasenGatewayOptions) {
   let apiKey: string | undefined;
@@ -248,7 +251,7 @@ export function createSynsbasenGateway(options: SynsbasenGatewayOptions) {
 }
 
 function buildGateway(options: SynsbasenGatewayOptions, apiKey: string) {
-  const baseUrl = requiredCredential(options, 'baseUrl');
+  const baseUrl = options.baseUrl === undefined ? DEFAULT_BASE_URL : requiredCredential(options, 'baseUrl');
   const { policy: hostPolicy, ...clientOptions } = options;
   const policy =
     hostPolicy === undefined ? undefined : resolveInstancePolicy(hostPolicy, SYNSBASEN_TOOLS.map(tool => tool.name));

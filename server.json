@@ -2,18 +2,18 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.borgels/mcp-server-synsbasen",
   "title": "Synsbasen",
-  "description": "Unofficial MCP server for the Synsbasen API.",
+  "description": "Danish vehicle data from Synsbasen: Motor Register, inspections, insurance, liens.",
   "repository": {
     "url": "https://github.com/borgels/mcp-server-synsbasen",
     "source": "github"
   },
-  "version": "0.4.0",
+  "version": "0.1.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "mcp-server-synsbasen",
-      "version": "0.4.0",
+      "version": "0.1.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -27,13 +27,13 @@
         },
         {
           "name": "SYNSBASEN_BASE_URL",
-          "description": "Base URL of the Synsbasen API.",
-          "isRequired": true,
-          "placeholder": "https://api.vendor.test/v1"
+          "description": "Base URL of the Synsbasen API (default https://api.synsbasen.dk/v1).",
+          "isRequired": false,
+          "placeholder": "https://api.synsbasen.dk/v1"
         },
         {
           "name": "SYNSBASEN_ENABLE_WRITES",
-          "description": "Enable the write tools.",
+          "description": "Enable the watch list tools.",
           "format": "boolean",
           "default": "false"
         },

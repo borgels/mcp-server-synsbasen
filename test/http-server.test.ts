@@ -51,7 +51,7 @@ const mcpHeaders = {
 function fakeMcpServer() {
   const client = new SynsbasenClient({
     apiKey: 'test',
-    baseUrl: 'https://api.vendor.test',
+    baseUrl: 'https://api.synsbasen.dk/v1',
     fetchImpl: async () => {
       throw new Error('network access is not allowed in tests');
     },

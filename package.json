@@ -1,8 +1,8 @@
 {
   "name": "mcp-server-synsbasen",
-  "version": "0.4.0",
+  "version": "0.1.0",
   "mcpName": "io.github.borgels/mcp-server-synsbasen",
-  "description": "Unofficial MCP server for the Synsbasen API.",
+  "description": "Unofficial MCP server for the Synsbasen API: Danish vehicle data from the Motor Register, inspections, insurance and liens.",
   "type": "module",
   "main": "./dist/transports/stdio.js",
   "exports": {
@@ -38,7 +38,10 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "synsbasen"
+    "synsbasen",
+    "dmr",
+    "vehicles",
+    "denmark"
   ],
   "author": "",
   "license": "FSL-1.1-ALv2",

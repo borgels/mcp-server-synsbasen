@@ -5,7 +5,7 @@ import { USER_AGENT } from '../version.js';
 export interface SynsbasenClientOptions {
   /** API key. When omitted, read from SYNSBASEN_API_KEY in `credentialEnv`. */
   apiKey?: string;
-  /** API base URL. When omitted, read from SYNSBASEN_BASE_URL in `credentialEnv`. */
+  /** API base URL. When omitted, read from SYNSBASEN_BASE_URL in `credentialEnv`, else DEFAULT_BASE_URL. */
   baseUrl?: string;
   /**
    * Where omitted credentials (apiKey, baseUrl) are read from. Defaults to
@@ -36,19 +36,23 @@ export interface SynsbasenClientOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
-export type QueryValue = string | number | boolean | null | undefined;
+/** A query value; an array is sent as one parameter per entry (`expand[]=a&expand[]=b`). */
+export type QueryValue = string | number | boolean | null | undefined | readonly string[];
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
-/** Header that carries the API key. Change it to match the upstream API; error text redaction follows it. */
-export const API_KEY_HEADER = 'X-API-Key';
+/** Header that carries the API key, as `Bearer <key>`; error text redaction follows it. */
+export const API_KEY_HEADER = 'Authorization';
+
+/** The one address of the Synsbasen API (version 1). */
+export const DEFAULT_BASE_URL = 'https://api.synsbasen.dk/v1';
 
 /**
  * Hosts the API key may be sent to (exact host or any subdomain), e.g.
  * ['api.vendor.com']. Empty: any https host. Loopback http is always allowed
  * for local mocks.
  */
-export const UPSTREAM_HOST_SUFFIXES: readonly string[] = [];
+export const UPSTREAM_HOST_SUFFIXES: readonly string[] = ['api.synsbasen.dk'];
 
 export const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 const MAX_RESPONSE_BYTES_LIMIT = 100 * 1024 * 1024;
@@ -104,7 +108,16 @@ export interface UpstreamClient {
   get<T>(path: string, query?: Record<string, QueryValue>): Promise<T>;
   post<T>(path: string, body?: unknown, query?: Record<string, QueryValue>): Promise<T>;
   patch<T>(path: string, body?: unknown): Promise<T>;
+  delete<T>(path: string): Promise<T>;
+  /**
+   * A POST that only reads: Synsbasen's search endpoints (`.../search`) and the plate recognition from an image
+   * (`/vehicles/by_image`). The only POST a read-only tool may make.
+   */
+  search<T>(path: string, body: unknown): Promise<T>;
 }
+
+/** The POST paths that only read (UpstreamClient.search). */
+const READING_POST = /^\/(?:[a-z_]+\/search|vehicles\/by_image)$/;
 
 /**
  * A view of the client that only allows GET. A read-only tool that needs a
@@ -119,6 +132,8 @@ export function readOnlyClient(client: UpstreamClient, toolName: string): Upstre
     get: (path, query) => client.get(path, query),
     post: refuse('POST'),
     patch: refuse('PATCH'),
+    delete: refuse('DELETE'),
+    search: (path, body) => client.search(path, body),
   };
 }
 
@@ -152,14 +167,9 @@ export class SynsbasenClient implements UpstreamClient {
     const credentialEnv = options.credentialEnv ?? process.env;
     this.apiKey = options.apiKey ?? readEnvString('SYNSBASEN_API_KEY', credentialEnv);
     this.redactor = new SecretRedactor().addHeader(API_KEY_HEADER).addSecret(this.apiKey);
-    const baseUrl = options.baseUrl ?? readEnvString('SYNSBASEN_BASE_URL', credentialEnv);
-    if (baseUrl !== undefined) {
-      this.baseUrl = trimTrailingSlash(baseUrl);
-      assertSafeBaseUrl(
-        this.baseUrl,
-        options.allowCustomBaseUrl ?? readEnvBoolean('SYNSBASEN_ALLOW_CUSTOM_BASE_URL', false),
-      );
-    }
+    const baseUrl = options.baseUrl ?? readEnvString('SYNSBASEN_BASE_URL', credentialEnv) ?? DEFAULT_BASE_URL;
+    this.baseUrl = trimTrailingSlash(baseUrl);
+    assertSafeBaseUrl(this.baseUrl, options.allowCustomBaseUrl ?? readEnvBoolean('SYNSBASEN_ALLOW_CUSTOM_BASE_URL', false));
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = intOption('timeoutMs', options.timeoutMs, 'SYNSBASEN_TIMEOUT_MS', 30_000, 1, MAX_TIMER_MS);
     this.maxResponseBytes = intOption(
@@ -191,6 +201,17 @@ export class SynsbasenClient implements UpstreamClient {
     return this.request<T>('PATCH', this.buildUrl(path), body);
   }
 
+  async delete<T>(path: string): Promise<T> {
+    return this.request<T>('DELETE', this.buildUrl(path));
+  }
+
+  async search<T>(path: string, body: unknown): Promise<T> {
+    if (!READING_POST.test(path)) {
+      throw new Error('Refused: only a search or a plate recognition may be sent as a reading POST.');
+    }
+    return this.request<T>('POST', this.buildUrl(path), body);
+  }
+
   buildUrl(path: string, query?: Record<string, QueryValue>): string {
     if (!this.baseUrl) {
       throw new Error('Missing SYNSBASEN_BASE_URL. Set it in the MCP server environment.');
@@ -200,6 +221,10 @@ export class SynsbasenClient implements UpstreamClient {
 
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value === undefined || value === null || value === '') {
+        continue;
+      }
+      if (Array.isArray(value)) {
+        for (const entry of value) url.searchParams.append(key, String(entry));
         continue;
       }
       url.searchParams.set(key, String(value));
@@ -215,7 +240,8 @@ export class SynsbasenClient implements UpstreamClient {
     return {
       Accept: 'application/json',
       'User-Agent': USER_AGENT,
-      [API_KEY_HEADER]: this.apiKey,
+      'Content-Type': 'application/json',
+      [API_KEY_HEADER]: `Bearer ${this.apiKey}`,
     };
   }
 
@@ -223,7 +249,6 @@ export class SynsbasenClient implements UpstreamClient {
     const headers = this.headers();
     const init: RequestInit = { method, headers };
     if (body !== undefined) {
-      headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body);
     }
 

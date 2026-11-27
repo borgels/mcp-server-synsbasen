@@ -11,7 +11,7 @@ afterEach(() => {
   process.env = { ...originalEnv };
 });
 
-const BASE = 'https://api.vendor.test/v1';
+const BASE = 'https://api.synsbasen.dk/v1';
 
 type Handler = (url: string, init?: RequestInit) => Response | unknown | Promise<Response | unknown>;
 
@@ -55,22 +55,46 @@ describe('SynsbasenClient', () => {
       return { id: '1' };
     });
 
-    await new SynsbasenClient({ apiKey: 'secret-key', baseUrl: `${BASE}/`, fetchImpl }).get('/items/1', { q: 'x' });
+    await new SynsbasenClient({ apiKey: 'secret-key', baseUrl: `${BASE}/`, fetchImpl }).get('/test_centers/1', { q: 'x' });
 
-    expect(seenUrl).toBe(`${BASE}/items/1?q=x`);
-    expect(headersOf(seenInit)[API_KEY_HEADER]).toBe('secret-key');
+    expect(seenUrl).toBe(`${BASE}/test_centers/1?q=x`);
+    expect(headersOf(seenInit)[API_KEY_HEADER]).toBe('Bearer secret-key');
+    expect(headersOf(seenInit)['Content-Type']).toBe('application/json');
     expect(headersOf(seenInit)['User-Agent']).toBe(USER_AGENT);
     expect(seenInit?.redirect).toBe('manual');
   });
 
-  it('throws before sending anything when the API key or base URL is missing', async () => {
+  it('throws before sending anything when the API key is missing, and uses the Synsbasen address by default', async () => {
     const fetchImpl = makeFetch(() => ({}));
     delete process.env.SYNSBASEN_API_KEY;
     delete process.env.SYNSBASEN_BASE_URL;
 
     await expect(new SynsbasenClient({ baseUrl: BASE, fetchImpl }).get('/x')).rejects.toThrow('SYNSBASEN_API_KEY');
-    await expect(new SynsbasenClient({ apiKey: 'k', fetchImpl }).get('/x')).rejects.toThrow('SYNSBASEN_BASE_URL');
     expect(fetchImpl).not.toHaveBeenCalled();
+    expect(new SynsbasenClient({ apiKey: 'k', fetchImpl }).baseUrl).toBe('https://api.synsbasen.dk/v1');
+  });
+
+  it('refuses a host other than api.synsbasen.dk unless explicitly allowed', () => {
+    expect(() => new SynsbasenClient({ apiKey: 'k', baseUrl: 'https://api.vendor.test/v1' })).toThrow('api.synsbasen.dk');
+    expect(() => new SynsbasenClient({ apiKey: 'k', baseUrl: 'https://api.vendor.test/v1', allowCustomBaseUrl: true })).not.toThrow();
+  });
+
+  it('sends an array query value as one parameter per entry', async () => {
+    let seenUrl = '';
+    const fetchImpl = makeFetch(url => {
+      seenUrl = url;
+      return {};
+    });
+    await makeClient(fetchImpl).get('/vehicles/1', { 'expand[]': ['engine', 'body'] });
+    expect(seenUrl).toBe(`${BASE}/vehicles/1?expand%5B%5D=engine&expand%5B%5D=body`);
+  });
+
+  it('sends a reading POST only to a search or the image recognition', async () => {
+    const fetchImpl = makeFetch(() => ({ data: [] }));
+    await expect(makeClient(fetchImpl).search('/vehicles/search', {})).resolves.toEqual({ data: [] });
+    await expect(makeClient(fetchImpl).search('/vehicles/by_image', {})).resolves.toEqual({ data: [] });
+    await expect(makeClient(fetchImpl).search('/watched_vehicles', {})).rejects.toThrow('Refused');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it('refuses unsafe base URLs without echoing credentials', () => {
@@ -110,6 +134,7 @@ describe('SynsbasenClient', () => {
     delete process.env.SYNSBASEN_MAX_RESPONSE_BYTES;
     process.env.SYNSBASEN_ALLOW_CUSTOM_BASE_URL = 'perhaps';
     expect(() => new SynsbasenClient({ apiKey: 'k', baseUrl: BASE })).toThrow('SYNSBASEN_ALLOW_CUSTOM_BASE_URL');
+    delete process.env.SYNSBASEN_ALLOW_CUSTOM_BASE_URL;
 
     expect(() => new SynsbasenClient({ apiKey: 'k', maxConcurrency: 0 })).toThrow('maxConcurrency');
     expect(() => new SynsbasenClient({ apiKey: 'k', maxConcurrency: Number.NaN })).toThrow('maxConcurrency');
@@ -413,19 +438,19 @@ describe('against a local upstream (real sockets)', () => {
     const seen: Array<{ url?: string; key?: string }> = [];
     const base = await startUpstream((req, res) => {
       seen.push({ url: req.url, key: req.headers[API_KEY_HEADER.toLowerCase()] as string | undefined });
-      if (req.url === '/v1/items/1') {
+      if (req.url === '/v1/test_centers/1') {
         res.writeHead(200, { 'content-type': 'application/json' }).end('{"id":"1"}');
         return;
       }
-      res.writeHead(302, { location: `${base}/items/1` }).end();
+      res.writeHead(302, { location: `${base}/test_centers/1` }).end();
     });
     const client = new SynsbasenClient({ apiKey: 'local-key-123456', baseUrl: base });
 
-    await expect(client.get('/items/1')).resolves.toEqual({ id: '1' });
+    await expect(client.get('/test_centers/1')).resolves.toEqual({ id: '1' });
     await expect(client.get('/moved')).rejects.toThrow('redirects are not followed');
     expect(seen).toEqual([
-      { url: '/v1/items/1', key: 'local-key-123456' },
-      { url: '/v1/moved', key: 'local-key-123456' },
+      { url: '/v1/test_centers/1', key: 'Bearer local-key-123456' },
+      { url: '/v1/moved', key: 'Bearer local-key-123456' },
     ]);
   });
 

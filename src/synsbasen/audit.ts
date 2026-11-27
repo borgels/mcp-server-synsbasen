@@ -136,14 +136,17 @@ function errorFields(summary: ReturnType<typeof auditErrorSummary>) {
   return { httpStatus: summary.httpStatus, error: summary.message };
 }
 
-/** Identifier fields logged in clear text: they are opaque ids, not secrets. Extend per tool. */
-const ID_FIELDS = ['itemId'] as const;
+/** Identifier fields logged in clear text: Synsbasen's own numeric ids, and the level or kind of a lookup. */
+const ID_FIELDS = ['vehicleId', 'inspectionId', 'testCenterId', 'bodyTypeId', 'id', 'level', 'method'] as const;
 
-/** Free-text fields are hashed so user-written text does not land in the log. */
-const FREE_TEXT_FIELDS = ['name', 'query'] as const;
+/**
+ * Hashed, never logged in clear text: a registration number or VIN can point to a person through the vehicle's
+ * owner, and a capability search is the caller's own words.
+ */
+const FREE_TEXT_FIELDS = ['registration', 'vin', 'query'] as const;
 
-/** Write payload objects: only their field names are logged. */
-const PAYLOAD_FIELDS = ['body', 'patch'] as const;
+/** Search filters: only their attribute names are logged, never the values searched for. */
+const PAYLOAD_FIELDS = ['query'] as const;
 
 /** Build the audit `target` for a tool input. Values not listed above are not logged. */
 export function auditTarget(input: unknown): Record<string, unknown> | undefined {

@@ -6,7 +6,7 @@ import { SynsbasenClient } from '../src/synsbasen/client.js';
 import { createSynsbasenGateway } from '../src/gateway.js';
 import { createServer } from '../src/server.js';
 
-export const BASE = 'https://api.vendor.test/v1';
+export const BASE = 'https://api.synsbasen.dk/v1';
 
 export type Stub = { status?: number; body?: unknown; raw?: string };
 

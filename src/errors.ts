@@ -157,12 +157,13 @@ function applyPatterns(value: string, patterns: readonly RegExp[]): string {
   );
 }
 
-/** Our own guidance per HTTP status. Replace or extend with the vendor's documented statuses. */
+/** Our own guidance per HTTP status, from the statuses Synsbasen documents. */
 const STATUS_HINTS: Record<number, string> = {
+  400: 'Synsbasen refused the request as malformed. Check the input.',
   401: 'The API key was rejected (invalid or expired). The server operator must renew SYNSBASEN_API_KEY.',
-  403: 'The API key has no access to this resource. Retrying will not help.',
-  404: 'The object was not found, or the API key has no access to it. Check the ids.',
-  429: 'The upstream API is throttling requests. Wait and retry later.',
+  403: "The subscription or API key does not include this (search, expansions or tokens). Retrying will not help.",
+  404: 'Not found in Synsbasen. Check the registration number, VIN or id.',
+  429: "Synsbasen refused the request: too many requests, the month's request quota or the token balance is used up.",
 };
 
 /**

@@ -68,11 +68,11 @@ describe('vendorRequestId', () => {
   });
 
   it('gives metadata for an HTTP error only', () => {
-    expect(failureMetadata(new SynsbasenHttpError({ status: 404, url: `${BASE}/items/1`, requestId: UUID }))).toEqual({
+    expect(failureMetadata(new SynsbasenHttpError({ status: 404, url: `${BASE}/test_centers/1`, requestId: UUID }))).toEqual({
       httpStatus: 404,
       requestId: UUID,
     });
-    expect(failureMetadata(new SynsbasenHttpError({ status: 500, url: `${BASE}/items/1`, requestId: 'Jane Doe' }))).toEqual({
+    expect(failureMetadata(new SynsbasenHttpError({ status: 500, url: `${BASE}/test_centers/1`, requestId: 'Jane Doe' }))).toEqual({
       httpStatus: 500,
     });
     expect(failureMetadata(new Error('boom'))).toBeUndefined();
@@ -82,7 +82,7 @@ describe('vendorRequestId', () => {
 
 describe('gateway error results', () => {
   it('carry the HTTP status and the request id, never the body', async () => {
-    const result = await gatewayAnswering(404, { 'x-request-id': UUID }).callTool('get_item', { itemId: 'item-1' });
+    const result = await gatewayAnswering(404, { 'x-request-id': UUID }).callTool('get_test_center', { testCenterId: 'item-1' });
     expect(result.isError).toBe(true);
     expect(result.failure).toEqual({ httpStatus: 404, requestId: UUID });
     const serialised = JSON.stringify(result);
@@ -91,8 +91,8 @@ describe('gateway error results', () => {
   });
 
   it('carry the status alone when the request id is not in the form of one', async () => {
-    const result = await gatewayAnswering(422, { 'x-request-id': 'Jane Doe <jane@synsbasen.com>' }).callTool('get_item', {
-      itemId: 'item-1',
+    const result = await gatewayAnswering(422, { 'x-request-id': 'Jane Doe <jane@synsbasen.com>' }).callTool('get_test_center', {
+      testCenterId: 'item-1',
     });
     expect(result.failure).toEqual({ httpStatus: 422 });
     expect(JSON.stringify(result)).not.toContain('jane@synsbasen.com');
@@ -103,7 +103,7 @@ describe('gateway error results', () => {
     const fetchImpl = (async () =>
       new Response('{}', { status: 500, headers: { 'x-request-id': 'deadbeef00112233' } })) as typeof fetch;
     const gw = createSynsbasenGateway({ apiKey: 'deadbeef00112233-key-0', baseUrl: BASE, fetchImpl, retryBudgetMs: 0 });
-    const result = await gw.callTool('get_item', { itemId: 'item-1' });
+    const result = await gw.callTool('get_test_center', { testCenterId: 'item-1' });
     expect(result.failure).toEqual({ httpStatus: 500 });
     expect(JSON.stringify(result)).not.toContain('deadbeef0011');
   });
@@ -115,7 +115,7 @@ describe('gateway error results', () => {
         headers: { location: 'https://elsewhere.test/jane@synsbasen.com', 'x-request-id': UUID },
       })) as typeof fetch;
     const gw = createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl, retryBudgetMs: 0 });
-    const result = await gw.callTool('get_item', { itemId: 'item-1' });
+    const result = await gw.callTool('get_test_center', { testCenterId: 'item-1' });
     expect(result.isError).toBe(true);
     expect(result.failure).toEqual({ httpStatus: 302, requestId: UUID });
     expect(JSON.stringify(result)).not.toContain('elsewhere.test');
@@ -123,7 +123,7 @@ describe('gateway error results', () => {
 
   it('have no metadata when the cause is not the upstream API', async () => {
     const gw = gatewayAnswering(200, {});
-    expect((await gw.callTool('get_item', {})).failure).toBeUndefined();
+    expect((await gw.callTool('get_test_center', {})).failure).toBeUndefined();
     expect((await gw.callTool('no_such_tool', {})).failure).toBeUndefined();
     const offline = createSynsbasenGateway({
       apiKey: KEY,
@@ -133,12 +133,12 @@ describe('gateway error results', () => {
         throw new TypeError('fetch failed');
       }) as typeof fetch,
     });
-    expect((await offline.callTool('get_item', { itemId: 'item-1' })).failure).toBeUndefined();
+    expect((await offline.callTool('get_test_center', { testCenterId: 'item-1' })).failure).toBeUndefined();
   });
 
   it('are absent on a successful result', async () => {
-    const result = await gatewayAnswering(200, { 'x-request-id': UUID }, { id: 'item-1' }).callTool('get_item', {
-      itemId: 'item-1',
+    const result = await gatewayAnswering(200, { 'x-request-id': UUID }, { id: 'item-1' }).callTool('get_test_center', {
+      testCenterId: 'item-1',
     });
     expect(result.isError).toBeUndefined();
     expect(result.failure).toBeUndefined();

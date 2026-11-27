@@ -16,9 +16,9 @@ vi.mock('../src/synsbasen/items.js', async original => {
   const actual = await original<typeof import('../src/synsbasen/items.js')>();
   return {
     ...actual,
-    createItem: (...args: Parameters<typeof actual.createItem>) => {
+    watchVehicle: (...args: Parameters<typeof actual.watchVehicle>) => {
       if (handler.refuse) return Promise.reject(handler.refuse);
-      return actual.createItem(...args);
+      return actual.watchVehicle(...args);
     },
   };
 });
@@ -62,15 +62,15 @@ describe('normaliseActAs', () => {
 describe('a gateway call with actAs', () => {
   it('gives the handler the person through the call scope, and only for that call', async () => {
     const { gw, seen } = gateway();
-    expect((await gw.callTool('create_item', { name: 'n' }, { caller: 'p1', actAs: { email: EMAIL } })).isError).toBeUndefined();
-    expect((await gw.callTool('create_item', { name: 'n' }, { caller: 'p1' })).isError).toBeUndefined();
+    expect((await gw.callTool('watch_vehicle', { vehicleId: 'n' }, { caller: 'p1', actAs: { email: EMAIL } })).isError).toBeUndefined();
+    expect((await gw.callTool('watch_vehicle', { vehicleId: 'n' }, { caller: 'p1' })).isError).toBeUndefined();
     expect(seen).toEqual([EMAIL.toLowerCase(), undefined]);
   });
 
   it('answers a refusal from the handler with actAsRefused and a fixed text, never the email', async () => {
     for (const refusal of ['no_user', 'not_permitted'] as const) {
       const { gw } = gateway(new ActAsRefusedError(refusal));
-      const result = await gw.callTool('create_item', { name: 'n' }, { caller: 'p1', actAs: { email: EMAIL } });
+      const result = await gw.callTool('watch_vehicle', { vehicleId: 'n' }, { caller: 'p1', actAs: { email: EMAIL } });
       expect(result.isError).toBe(true);
       expect(result.actAsRefused).toBe(refusal);
       expect(JSON.stringify(result).toLowerCase()).not.toContain(EMAIL.toLowerCase());
@@ -80,7 +80,7 @@ describe('a gateway call with actAs', () => {
   it('refuses a malformed person before anything is sent, null included', async () => {
     for (const actAs of [{ email: 'not an email' }, null, { email: 'a\u0000b@synsbasen.test' }]) {
       const { gw, seen } = gateway();
-      const result = await gw.callTool('create_item', { name: 'n' }, { caller: 'p1', actAs: actAs as never });
+      const result = await gw.callTool('watch_vehicle', { vehicleId: 'n' }, { caller: 'p1', actAs: actAs as never });
       expect(result, JSON.stringify(actAs)).toMatchObject({ isError: true, actAsRefused: 'invalid' });
       expect(seen).toEqual([]);
     }
@@ -89,24 +89,24 @@ describe('a gateway call with actAs', () => {
   it('keeps the person of each call to that call when calls run at the same time', async () => {
     const { gw, seen } = gateway();
     await Promise.all([
-      gw.callTool('create_item', { name: 'a' }, { actAs: { email: 'a@demobyg.synsbasen' } }),
-      gw.callTool('create_item', { name: 'b' }, { actAs: { email: 'b@demobyg.synsbasen' } }),
-      gw.callTool('create_item', { name: 'c' }),
+      gw.callTool('watch_vehicle', { vehicleId: 'a' }, { actAs: { email: 'a@demobyg.synsbasen' } }),
+      gw.callTool('watch_vehicle', { vehicleId: 'b' }, { actAs: { email: 'b@demobyg.synsbasen' } }),
+      gw.callTool('watch_vehicle', { vehicleId: 'c' }),
     ]);
     expect([...seen].sort()).toEqual(['a@demobyg.synsbasen', 'b@demobyg.synsbasen', undefined].sort());
   });
 
   it('never writes the email to the audit', async () => {
     const { gw, records } = gateway();
-    await gw.callTool('get_item', { itemId: 'i1' }, { caller: 'p1', actAs: { email: EMAIL } });
-    await gw.callTool('create_item', { name: 'n' }, { caller: 'p1', actAs: { email: EMAIL } });
+    await gw.callTool('get_test_center', { testCenterId: 'i1' }, { caller: 'p1', actAs: { email: EMAIL } });
+    await gw.callTool('watch_vehicle', { vehicleId: 'n' }, { caller: 'p1', actAs: { email: EMAIL } });
     expect(records.length).toBeGreaterThan(0);
     expect(JSON.stringify(records).toLowerCase()).not.toContain(EMAIL.toLowerCase());
   });
 
   it('keeps actAsRefused only on an error result', async () => {
     const { gw } = gateway();
-    const result = await gw.callTool('get_item', { itemId: 'i1' }, { actAs: { email: EMAIL } });
+    const result = await gw.callTool('get_test_center', { testCenterId: 'i1' }, { actAs: { email: EMAIL } });
     expect(result.isError).toBeUndefined();
     expect('actAsRefused' in result).toBe(false);
   });
@@ -117,7 +117,7 @@ describe('the refusal of a malformed person', () => {
     // A key the first filter admits that shares a piece with the result's field name actAsRefused.
     const apiKey = 'Zq7pactAsRK9mWb4TnR8yLc3Hd';
     const gw = createSynsbasenGateway({ apiKey, baseUrl: BASE, fetchImpl: async () => json({}), maxAttempts: 1, policy: { enableWrites: true } });
-    const result = await gw.callTool('create_item', { name: 'n' }, { actAs: null as never });
+    const result = await gw.callTool('watch_vehicle', { vehicleId: 'n' }, { actAs: null as never });
     expect(result.isError).toBe(true);
     const text = JSON.stringify(result);
     for (let i = 0; i + 6 <= apiKey.length; i += 1) expect(text, apiKey.slice(i, i + 6)).not.toContain(apiKey.slice(i, i + 6));

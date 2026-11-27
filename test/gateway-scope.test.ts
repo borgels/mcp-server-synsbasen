@@ -30,8 +30,8 @@ const LONG_KEY = `long-${'k'.repeat(250)}`;
 
 function routes() {
   return stubFetch({
-    [`GET ${BASE}/items/i1`]: { body: { id: 'i1' } },
-    [`POST ${BASE}/items`]: { body: { id: 'new' } },
+    [`GET ${BASE}/test_centers/i1`]: { body: { id: 'i1' } },
+    [`POST ${BASE}/watched_vehicles`]: { body: { id: 'new' } },
   });
 }
 
@@ -50,7 +50,7 @@ function heldFetch() {
   });
   const keys: string[] = [];
   const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
-    keys.push(String((init?.headers as Record<string, string> | undefined)?.[API_KEY_HEADER] ?? ''));
+    keys.push(String((init?.headers as Record<string, string> | undefined)?.[API_KEY_HEADER] ?? '').replace(/^Bearer /, ''));
     signalStarted();
     await gate;
     return json({ id: 'i1' });
@@ -77,10 +77,10 @@ describe('audit records', () => {
     });
     const metadata = { caller: `person ${LONG_KEY}`, requestId: LONG_KEY };
     await gw.callTool(LONG_KEY, {}, metadata);
-    await gw.callTool(`get_${LONG_KEY}`, { itemId: 'i1' }, metadata);
-    await gw.callTool('get_item', { [LONG_KEY]: 'x', itemId: 'i1' }, metadata);
-    await gw.callTool('get_item', { itemId: LONG_KEY }, metadata);
-    await gw.callTool('create_item', { name: LONG_KEY, description: LONG_KEY }, metadata);
+    await gw.callTool(`get_${LONG_KEY}`, { testCenterId: 'i1' }, metadata);
+    await gw.callTool('get_test_center', { [LONG_KEY]: 'x', testCenterId: 'i1' }, metadata);
+    await gw.callTool('get_test_center', { testCenterId: LONG_KEY }, metadata);
+    await gw.callTool('watch_vehicle', { vehicleId: LONG_KEY, description: LONG_KEY }, metadata);
 
     expect(records.length).toBeGreaterThanOrEqual(5);
     const text = JSON.stringify(records);
@@ -105,15 +105,15 @@ describe('call scopes', () => {
     });
 
     // A starts and waits inside its upstream request; B runs a read and a write meanwhile; then A resumes.
-    const pendingA = a.callTool('get_item', { itemId: 'i1' }, { requestId: 'a' });
+    const pendingA = a.callTool('get_test_center', { testCenterId: 'i1' }, { requestId: 'a' });
     await held.started;
     expect(held.keys).toEqual([KEY_A]);
-    expect((await b.callTool('get_item', { itemId: 'i1' }, { requestId: 'b1' })).isError).toBeUndefined();
-    expect((await b.callTool('create_item', { name: 'n' }, { requestId: 'b2' })).isError).toBeUndefined();
+    expect((await b.callTool('get_test_center', { testCenterId: 'i1' }, { requestId: 'b1' })).isError).toBeUndefined();
+    expect((await b.callTool('watch_vehicle', { vehicleId: 'n' }, { requestId: 'b2' })).isError).toBeUndefined();
     held.release();
     expect((await pendingA).isError).toBeUndefined();
     // After resuming, A still cannot write: its own policy, not B's.
-    expect((await a.callTool('create_item', { name: 'n' }, { requestId: 'a2' })).isError).toBe(true);
+    expect((await a.callTool('watch_vehicle', { vehicleId: 'n' }, { requestId: 'a2' })).isError).toBe(true);
 
     expect(sinkA.filter(r => r.requestId === 'a').map(r => r.action)).toEqual(['start', 'finish']);
     expect(new Set(sinkA.map(r => r.requestId))).toEqual(new Set(['a', 'a2']));
@@ -136,12 +136,12 @@ describe('call scopes', () => {
         audit: record => {
           sinkA.push(record);
           if (record.action === 'start' && nested.length === 0) {
-            nested.push(b.callTool('create_item', { name: 'n' }, { requestId: 'b' }));
+            nested.push(b.callTool('watch_vehicle', { vehicleId: 'n' }, { requestId: 'b' }));
           }
         },
       },
     });
-    expect((await a.callTool('create_item', { name: 'n' }, { requestId: 'a' })).isError).toBeUndefined();
+    expect((await a.callTool('watch_vehicle', { vehicleId: 'n' }, { requestId: 'a' })).isError).toBeUndefined();
     const fromInside = await nested[0]!;
     expect(fromInside.isError).toBe(true);
     expect(texts(fromInside).join(' ')).toMatch(/SYNSBASEN_ENABLE_WRITES/);
@@ -157,11 +157,11 @@ describe('call scopes', () => {
     const b = createSynsbasenGateway({ apiKey: KEY_B, baseUrl: BASE, fetchImpl: fetchB as unknown as typeof fetch, policy: {} });
     let fromInside: { isError?: boolean } | undefined;
     const fetchA = (async () => {
-      fromInside = await b.callTool('create_item', { name: 'n' });
+      fromInside = await b.callTool('watch_vehicle', { vehicleId: 'n' });
       return json({ id: 'new' });
     }) as unknown as typeof fetch;
     const a = createSynsbasenGateway({ apiKey: KEY_A, baseUrl: BASE, fetchImpl: fetchA });
-    expect((await a.callTool('create_item', { name: 'n' })).isError).toBeUndefined();
+    expect((await a.callTool('watch_vehicle', { vehicleId: 'n' })).isError).toBeUndefined();
     expect(fromInside?.isError).toBe(true);
     expect(fetchB).not.toHaveBeenCalled();
   });
@@ -193,7 +193,7 @@ describe('call scopes', () => {
         },
       },
     });
-    expect((await a.callTool('get_item', { itemId: 'i1' })).isError).toBeUndefined();
+    expect((await a.callTool('get_test_center', { testCenterId: 'i1' })).isError).toBeUndefined();
     expect(created.map(c => c.where).sort()).toEqual(['fetch', 'sink']);
     for (const c of created) {
       expect(String(c.error), c.where).toMatch(/SYNSBASEN_DISABLED_TOOLS names 1 unknown tool/);
@@ -213,8 +213,8 @@ describe('call scopes', () => {
         },
       },
     });
-    expect((await gw.callTool('get_item', { itemId: 'i1' })).isError).toBeUndefined();
-    const write = await gw.callTool('create_item', { name: 'n' });
+    expect((await gw.callTool('get_test_center', { testCenterId: 'i1' })).isError).toBeUndefined();
+    const write = await gw.callTool('watch_vehicle', { vehicleId: 'n' });
     expect(write.isError).toBe(true);
     expect(fetchImpl.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST')).toEqual([]);
   });
@@ -224,10 +224,10 @@ describe('call scopes', () => {
       apiKey: KEY_A,
       baseUrl: BASE,
       fetchImpl: routes() as unknown as typeof fetch,
-      policy: { disabledTools: ['get_item'] },
+      policy: { disabledTools: ['get_test_center'] },
     });
-    const disabled = texts(await gw.callTool('get_item', { itemId: 'i1' })).join(' ');
-    const write = texts(await gw.callTool('create_item', { name: 'n' })).join(' ');
+    const disabled = texts(await gw.callTool('get_test_center', { testCenterId: 'i1' })).join(' ');
+    const write = texts(await gw.callTool('watch_vehicle', { vehicleId: 'n' })).join(' ');
     for (const text of [disabled, write]) {
       expect(text).not.toMatch(/SYNSBASEN_/);
       expect(text).toMatch(/host/);

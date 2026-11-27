@@ -25,7 +25,7 @@ function leaked(key: string, outputs: unknown[]): string[] {
 
 const upstream: typeof fetch = async input => {
   const path = (String(input).split('?')[0] ?? '').slice(BASE.length);
-  if (path === '/items/i1') return json({ id: 'i1', name: 'Item one', status: 'open', riskLevel: 'low' });
+  if (path === '/test_centers/i1') return json({ id: 'i1', name: 'Item one', status: 'open', riskLevel: 'low' });
   if (path === '/items') return json({ id: 'i2', name: 'n' }, 201);
   return json({ message: 'no stub' }, 404);
 };
@@ -46,11 +46,11 @@ async function outputs(apiKey: string): Promise<{ refused?: string; outputs: unk
     return { refused: (error as Error).message, outputs: [(error as Error).message, (error as Error).name] };
   }
   const results = [
-    await gw.callTool('get_item', { itemId: 'i1' }, { caller: 'person-1', requestId: 'r1' }),
-    await gw.callTool('create_item', { name: 'n' }, { caller: 'person-1', requestId: 'r2' }),
-    await gw.callTool('get_item', { itemId: 'missing' }),
+    await gw.callTool('get_test_center', { testCenterId: 'i1' }, { caller: 'person-1', requestId: 'r1' }),
+    await gw.callTool('watch_vehicle', { vehicleId: 'n' }, { caller: 'person-1', requestId: 'r2' }),
+    await gw.callTool('get_test_center', { testCenterId: 'missing' }),
     await gw.callTool('no_such_tool', {}),
-    await gw.callTool('get_item', { unknown: 1 }),
+    await gw.callTool('get_test_center', { unknown: 1 }),
   ];
   return { outputs: [gw.tools, ...results, ...records] };
 }
@@ -115,7 +115,7 @@ describe('failure texts', () => {
       policy: { enableWrites: true },
       fetchImpl: async () => json({ data: { failures: ['Vendor diagnostic'], errors: ['Vendor diagnostic'] } }),
     });
-    for (const result of [await gw.callTool('get_item', { itemId: 'x' }), await gw.callTool('create_item', { name: 'n' })]) {
+    for (const result of [await gw.callTool('get_test_center', { testCenterId: 'x' }), await gw.callTool('watch_vehicle', { vehicleId: 'n' })]) {
       expect(JSON.stringify(result)).not.toContain('Vendor');
       expect(result.structuredContent).toMatchObject({
         data: { failures: [{ message: 'Synsbasen API request failed.' }], errors: [{ message: 'Synsbasen API request failed.' }] },
@@ -159,7 +159,7 @@ describe('round 8', () => {
         policy: { enableWrites: true },
         fetchImpl: async () => json(body),
       });
-      for (const result of [await gw.callTool('get_item', { itemId: 'x' }), await gw.callTool('create_item', { name: 'n' })]) {
+      for (const result of [await gw.callTool('get_test_center', { testCenterId: 'x' }), await gw.callTool('watch_vehicle', { vehicleId: 'n' })]) {
         expect(JSON.stringify(result)).not.toContain('Vendor');
         expect(JSON.stringify(result.structuredContent)).toContain('"message":"Synsbasen API request failed."');
       }
@@ -175,7 +175,7 @@ describe('round 8', () => {
       async () => new Response(null, { status: 302, headers: { location: 'https://elsewhere.invalid/' } }),
     ] as Array<typeof fetch>) {
       const gw = createSynsbasenGateway({ apiKey: PLAIN, baseUrl: ADDRESS, allowCustomBaseUrl: true, maxAttempts: 1, fetchImpl });
-      const result = await gw.callTool('get_item', { itemId: 'x' });
+      const result = await gw.callTool('get_test_center', { testCenterId: 'x' });
       expect(result.isError).toBe(true);
       expect(JSON.stringify(result)).not.toContain('vendor-name');
     }
