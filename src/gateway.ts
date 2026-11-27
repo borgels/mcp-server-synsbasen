@@ -1,13 +1,13 @@
 import { z } from 'zod/v4';
-import { UNTRUSTED_CONTENT_NOTE } from './example/annotations.js';
-import { ExampleClient, type ExampleClientOptions } from './example/client.js';
+import { UNTRUSTED_CONTENT_NOTE } from './synsbasen/annotations.js';
+import { SynsbasenClient, type SynsbasenClientOptions } from './synsbasen/client.js';
 import {
   isToolDisabled,
   resolveInstancePolicy,
   runInCallScope,
   TOOL_PREFIX,
   type InstancePolicy,
-} from './example/policy.js';
+} from './synsbasen/policy.js';
 import { ActAsRefusedError, actAsRefusalInForm, normaliseActAs, type ActAs, type ActAsRefusal } from './act-as.js';
 import { ConfigError } from './config-env.js';
 import { failureMetadata, formatUnknownError, redactDeep, SecretRedactor, vendorRequestId, type FailureMetadata } from './errors.js';
@@ -15,37 +15,37 @@ import { fixedOutputs, withheldResult } from './fallbacks.js';
 import { admitsKey, keyRefusedText, leaksSecret, sealedError } from './key-admission.js';
 import {
   auditRejectedCall,
-  EXAMPLE_TOOLS,
+  SYNSBASEN_TOOLS,
   executeTool,
   findTool,
   validateStartupConfig,
   type CallContext,
   type ToolDefinition,
   type UpstreamOperation,
-} from './tools/example.js';
+} from './tools/synsbasen.js';
 
 /**
  * Embeddable entry point (package export `./gateway`): an embedding host,
  * such as an MCP gateway that does its own per-user authorization, lists
  * `tools` and invokes `callTool`. Tool definitions, input validation,
  * instance policy and audit are shared with the MCP server in
- * src/tools/example.ts.
+ * src/tools/synsbasen.ts.
  *
- * Several gateway instances (for example one per tenant) can run in one
+ * Several gateway instances (for synsbasen one per tenant) can run in one
  * process. Each instance uses only the credentials passed to
- * createExampleGateway (never EXAMPLE_API_KEY or EXAMPLE_BASE_URL from the
+ * createSynsbasenGateway (never SYNSBASEN_API_KEY or SYNSBASEN_BASE_URL from the
  * environment) and redacts errors with its own secrets only.
  *
  * Instance policy (writes, disabled tools, audit) comes from the host when it
- * passes `policy`: that instance then reads none of EXAMPLE_ENABLE_WRITES,
- * EXAMPLE_DISABLED_TOOLS, EXAMPLE_AUDIT_LOG or EXAMPLE_ALLOW_CUSTOM_BASE_URL,
+ * passes `policy`: that instance then reads none of SYNSBASEN_ENABLE_WRITES,
+ * SYNSBASEN_DISABLED_TOOLS, SYNSBASEN_AUDIT_LOG or SYNSBASEN_ALLOW_CUSTOM_BASE_URL,
  * so two tenants in one process can have different settings. Without
  * `policy` the instance uses the environment, as the MCP server does. Limits
  * (timeouts, retries) are still read from the environment and apply to every
  * instance.
  */
 
-export type { AuditSink, InstancePolicy } from './example/policy.js';
+export type { AuditSink, InstancePolicy } from './synsbasen/policy.js';
 export { ACT_AS_REFUSALS, ACT_AS_TEXTS } from './act-as.js';
 
 /** The person a call is made for (CallContext.actAs; see src/act-as.ts). */
@@ -118,7 +118,7 @@ export interface GatewayToolCatalogEntry {
   readonly broad: boolean;
 }
 
-export interface ExampleGatewayOptions extends Omit<ExampleClientOptions, 'apiKey' | 'baseUrl' | 'credentialEnv'> {
+export interface SynsbasenGatewayOptions extends Omit<SynsbasenClientOptions, 'apiKey' | 'baseUrl' | 'credentialEnv'> {
   /** API key of this instance. Required; never read from the environment. */
   apiKey: string;
   /** API base URL of this instance. Required; never read from the environment. */
@@ -173,27 +173,27 @@ function deepFreeze<T>(value: T): T {
 }
 
 /** All tools, as gateway definitions (names without the prefix). */
-export const exampleGatewayTools: GatewayToolDefinition[] = EXAMPLE_TOOLS.map(toGatewayDefinition);
+export const synsbasenGatewayTools: GatewayToolDefinition[] = SYNSBASEN_TOOLS.map(toGatewayDefinition);
 
 /**
  * The tool catalog: every tool with its gateway definition and the upstream
  * requests it may make. Generated from the same tool table as the MCP server
- * and `exampleGatewayTools`, and deeply frozen. Hosts can use it to build
+ * and `synsbasenGatewayTools`, and deeply frozen. Hosts can use it to build
  * their own permission model without creating a gateway instance.
  */
-export const exampleToolCatalog: readonly GatewayToolCatalogEntry[] = deepFreeze(
-  EXAMPLE_TOOLS.map(tool => ({
+export const synsbasenToolCatalog: readonly GatewayToolCatalogEntry[] = deepFreeze(
+  SYNSBASEN_TOOLS.map(tool => ({
     ...toGatewayDefinition(tool),
     upstream: tool.upstream.map(operation => ({ ...operation })),
     broad: tool.broad === true,
   })),
 );
 
-function requiredCredential(options: ExampleGatewayOptions, name: 'apiKey' | 'baseUrl'): string {
-  const value: unknown = (options as Partial<ExampleGatewayOptions> | undefined)?.[name];
+function requiredCredential(options: SynsbasenGatewayOptions, name: 'apiKey' | 'baseUrl'): string {
+  const value: unknown = (options as Partial<SynsbasenGatewayOptions> | undefined)?.[name];
   if (typeof value !== 'string' || value.trim() === '') {
     throw new ConfigError(
-      `createExampleGateway requires options.${name}. Embedded instances do not read credentials from the environment.`,
+      `createSynsbasenGateway requires options.${name}. Embedded instances do not read credentials from the environment.`,
     );
   }
   // Key admission (src/key-admission.ts): printable ASCII of 16 characters or more, sharing no piece with any text of
@@ -208,11 +208,11 @@ function requiredCredential(options: ExampleGatewayOptions, name: 'apiKey' | 'ba
  * Create one gateway instance. `apiKey` and `baseUrl` are required and
  * are the only credentials the instance uses; a missing value fails here.
  */
-export function createExampleGateway(options: ExampleGatewayOptions) {
+export function createSynsbasenGateway(options: SynsbasenGatewayOptions) {
   let apiKey: string | undefined;
   let guard: SecretRedactor | undefined;
   // What the host gave, admitted or not: every error is masked against it.
-  const given: unknown = (options as Partial<ExampleGatewayOptions> | undefined)?.apiKey;
+  const given: unknown = (options as Partial<SynsbasenGatewayOptions> | undefined)?.apiKey;
   const secrets = typeof given === 'string' ? [given, given.trim()] : [];
   try {
     // Admission first, before a redactor is built from the key.
@@ -247,17 +247,17 @@ export function createExampleGateway(options: ExampleGatewayOptions) {
   }
 }
 
-function buildGateway(options: ExampleGatewayOptions, apiKey: string) {
+function buildGateway(options: SynsbasenGatewayOptions, apiKey: string) {
   const baseUrl = requiredCredential(options, 'baseUrl');
   const { policy: hostPolicy, ...clientOptions } = options;
   const policy =
-    hostPolicy === undefined ? undefined : resolveInstancePolicy(hostPolicy, EXAMPLE_TOOLS.map(tool => tool.name));
+    hostPolicy === undefined ? undefined : resolveInstancePolicy(hostPolicy, SYNSBASEN_TOOLS.map(tool => tool.name));
   if (policy === undefined) {
     // In a scope of its own: a gateway created from inside another instance's call (its audit sink or its fetch)
     // validates against the environment, never against that instance's policy.
     runInCallScope({}, () => validateStartupConfig());
   }
-  const client = new ExampleClient({
+  const client = new SynsbasenClient({
     ...clientOptions,
     apiKey,
     baseUrl,
@@ -272,8 +272,8 @@ function buildGateway(options: ExampleGatewayOptions, apiKey: string) {
     runInCallScope({ ...(policy ? { policy } : {}), redactor, ...(actAs ? { actAs } : {}) }, work);
 
   return {
-    /** Tools enabled on this instance (the policy's or EXAMPLE_DISABLED_TOOLS' disabled tools are left out). */
-    tools: underPolicy(() => exampleGatewayTools.filter(tool => !isToolDisabled(tool.name))),
+    /** Tools enabled on this instance (the policy's or SYNSBASEN_DISABLED_TOOLS' disabled tools are left out). */
+    tools: underPolicy(() => synsbasenGatewayTools.filter(tool => !isToolDisabled(tool.name))),
     callTool(toolName: string, input: GatewayJsonObject = {}, context?: GatewayCallContext): Promise<GatewayToolResult> {
       // The whole result, text and data (keys included, numbers by their string form), with this instance's secrets
       // redacted: upstream data can echo the key, and so can an error. Redacted first, as data and depth-limited, and
@@ -315,7 +315,7 @@ function buildGateway(options: ExampleGatewayOptions, apiKey: string) {
       const tool = name ? findTool(`${TOOL_PREFIX}${stripPrefix(name)}`) : undefined;
       if (!tool) {
         // Redacted before it is cut short: a cut key would no longer match the redactor.
-        const reason = `Unsupported Example gateway tool: ${redactor.redact(String(toolName)).slice(0, 100)}`;
+        const reason = `Unsupported Synsbasen gateway tool: ${redactor.redact(String(toolName)).slice(0, 100)}`;
         await auditRejectedCall(String(toolName), input, reason, context);
         return errorResult(redactor.redact(reason));
       }
@@ -342,8 +342,8 @@ function actAsRefused(refusal: ActAsRefusal): GatewayToolResult {
   return { ...errorResult(new ActAsRefusedError(refusal).message), actAsRefused: refusal };
 }
 
-/** One gateway instance, as returned by createExampleGateway. */
-export type ExampleGateway = ReturnType<typeof createExampleGateway>;
+/** One gateway instance, as returned by createSynsbasenGateway. */
+export type SynsbasenGateway = ReturnType<typeof createSynsbasenGateway>;
 
 /** The data as it came; callTool redacts it and only then copies it as JSON. */
 function jsonResult(text: string, structuredContent: unknown): GatewayToolResult {

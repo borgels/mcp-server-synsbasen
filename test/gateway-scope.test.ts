@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { API_KEY_HEADER } from '../src/example/client.js';
-import { createExampleGateway } from '../src/gateway.js';
+import { API_KEY_HEADER } from '../src/synsbasen/client.js';
+import { createSynsbasenGateway } from '../src/gateway.js';
 import { BASE, stubFetch, texts } from './helpers.js';
 
 // Every gateway call runs in a call scope of its own: its policy (or the environment), its sink and its
@@ -10,7 +10,7 @@ const originalEnv = { ...process.env };
 
 beforeEach(() => {
   for (const name of Object.keys(process.env)) {
-    if (name.startsWith('EXAMPLE_')) {
+    if (name.startsWith('SYNSBASEN_')) {
       delete process.env[name];
     }
   }
@@ -61,15 +61,15 @@ function heldFetch() {
 describe('audit records', () => {
   it('are never written with a key the redactor cannot protect: a short key is refused', () => {
     for (const apiKey of ['abc123', 'k', '1234567', '123456789012345']) {
-      expect(() => createExampleGateway({ apiKey, baseUrl: BASE, policy: {} }), apiKey).toThrow(/key was refused/);
-      expect(() => createExampleGateway({ apiKey, baseUrl: BASE }), apiKey).toThrow(/key was refused/);
+      expect(() => createSynsbasenGateway({ apiKey, baseUrl: BASE, policy: {} }), apiKey).toThrow(/key was refused/);
+      expect(() => createSynsbasenGateway({ apiKey, baseUrl: BASE }), apiKey).toThrow(/key was refused/);
     }
-    expect(() => createExampleGateway({ apiKey: '1234567890123456', baseUrl: BASE, policy: {} })).not.toThrow();
+    expect(() => createSynsbasenGateway({ apiKey: '1234567890123456', baseUrl: BASE, policy: {} })).not.toThrow();
   });
 
   it('keep the instance key out, refusals, input and metadata included', async () => {
     const records: AuditRecord[] = [];
-    const gw = createExampleGateway({
+    const gw = createSynsbasenGateway({
       apiKey: LONG_KEY,
       baseUrl: BASE,
       fetchImpl: routes() as unknown as typeof fetch,
@@ -96,8 +96,8 @@ describe('call scopes', () => {
     const held = heldFetch();
     const sinkA: AuditRecord[] = [];
     const sinkB: AuditRecord[] = [];
-    const a = createExampleGateway({ apiKey: KEY_A, baseUrl: BASE, fetchImpl: held.fetchImpl, policy: { audit: r => void sinkA.push(r) } });
-    const b = createExampleGateway({
+    const a = createSynsbasenGateway({ apiKey: KEY_A, baseUrl: BASE, fetchImpl: held.fetchImpl, policy: { audit: r => void sinkA.push(r) } });
+    const b = createSynsbasenGateway({
       apiKey: KEY_B,
       baseUrl: BASE,
       fetchImpl: routes() as unknown as typeof fetch,
@@ -125,9 +125,9 @@ describe('call scopes', () => {
     // allows no writes) tries a write: refused, nothing sent, and nothing of B's in A's sink.
     const sinkA: AuditRecord[] = [];
     const fetchB = routes();
-    const b = createExampleGateway({ apiKey: KEY_B, baseUrl: BASE, fetchImpl: fetchB as unknown as typeof fetch });
+    const b = createSynsbasenGateway({ apiKey: KEY_B, baseUrl: BASE, fetchImpl: fetchB as unknown as typeof fetch });
     const nested: Array<Promise<{ isError?: boolean; content: Array<{ text: string }> }>> = [];
-    const a = createExampleGateway({
+    const a = createSynsbasenGateway({
       apiKey: KEY_A,
       baseUrl: BASE,
       fetchImpl: routes() as unknown as typeof fetch,
@@ -144,7 +144,7 @@ describe('call scopes', () => {
     expect((await a.callTool('create_item', { name: 'n' }, { requestId: 'a' })).isError).toBeUndefined();
     const fromInside = await nested[0]!;
     expect(fromInside.isError).toBe(true);
-    expect(texts(fromInside).join(' ')).toMatch(/EXAMPLE_ENABLE_WRITES/);
+    expect(texts(fromInside).join(' ')).toMatch(/SYNSBASEN_ENABLE_WRITES/);
     expect(fetchB).not.toHaveBeenCalled();
     expect(sinkA.every(r => r.requestId === 'a')).toBe(true);
   });
@@ -152,15 +152,15 @@ describe('call scopes', () => {
   it('do not let an instance with a policy, called from inside one without, use the environment', async () => {
     // A has no host policy and the environment allows writes. From inside A's upstream request, B (host
     // policy without writes) tries a write: refused. After B returns, A's own write still goes through.
-    process.env.EXAMPLE_ENABLE_WRITES = 'true';
+    process.env.SYNSBASEN_ENABLE_WRITES = 'true';
     const fetchB = routes();
-    const b = createExampleGateway({ apiKey: KEY_B, baseUrl: BASE, fetchImpl: fetchB as unknown as typeof fetch, policy: {} });
+    const b = createSynsbasenGateway({ apiKey: KEY_B, baseUrl: BASE, fetchImpl: fetchB as unknown as typeof fetch, policy: {} });
     let fromInside: { isError?: boolean } | undefined;
     const fetchA = (async () => {
       fromInside = await b.callTool('create_item', { name: 'n' });
       return json({ id: 'new' });
     }) as unknown as typeof fetch;
-    const a = createExampleGateway({ apiKey: KEY_A, baseUrl: BASE, fetchImpl: fetchA });
+    const a = createSynsbasenGateway({ apiKey: KEY_A, baseUrl: BASE, fetchImpl: fetchA });
     expect((await a.callTool('create_item', { name: 'n' })).isError).toBeUndefined();
     expect(fromInside?.isError).toBe(true);
     expect(fetchB).not.toHaveBeenCalled();
@@ -169,11 +169,11 @@ describe('call scopes', () => {
   it('validate a gateway created inside another instance against the environment, not against its policy', async () => {
     // A's policy disables nothing unknown; the environment names a tool that does not exist. A gateway without a host
     // policy, created inside A's sink or fetch, must fail on the environment as it would anywhere else.
-    process.env.EXAMPLE_DISABLED_TOOLS = 'no_such_tool';
+    process.env.SYNSBASEN_DISABLED_TOOLS = 'no_such_tool';
     const created: Array<{ where: string; error: unknown }> = [];
     const tryCreate = (where: string) => {
       try {
-        createExampleGateway({ apiKey: KEY_B, baseUrl: BASE, fetchImpl: routes() as unknown as typeof fetch });
+        createSynsbasenGateway({ apiKey: KEY_B, baseUrl: BASE, fetchImpl: routes() as unknown as typeof fetch });
         created.push({ where, error: undefined });
       } catch (error) {
         created.push({ where, error });
@@ -183,7 +183,7 @@ describe('call scopes', () => {
       tryCreate('fetch');
       return json({ id: 'i1' });
     }) as unknown as typeof fetch;
-    const a = createExampleGateway({
+    const a = createSynsbasenGateway({
       apiKey: KEY_A,
       baseUrl: BASE,
       fetchImpl: fetchA,
@@ -196,13 +196,13 @@ describe('call scopes', () => {
     expect((await a.callTool('get_item', { itemId: 'i1' })).isError).toBeUndefined();
     expect(created.map(c => c.where).sort()).toEqual(['fetch', 'sink']);
     for (const c of created) {
-      expect(String(c.error), c.where).toMatch(/EXAMPLE_DISABLED_TOOLS names 1 unknown tool/);
+      expect(String(c.error), c.where).toMatch(/SYNSBASEN_DISABLED_TOOLS names 1 unknown tool/);
     }
   });
 
   it('never send a write upstream when the start record is refused', async () => {
     const fetchImpl = routes();
-    const gw = createExampleGateway({
+    const gw = createSynsbasenGateway({
       apiKey: KEY_A,
       baseUrl: BASE,
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -220,7 +220,7 @@ describe('call scopes', () => {
   });
 
   it('name the host, not an environment variable, when a host policy refuses', async () => {
-    const gw = createExampleGateway({
+    const gw = createSynsbasenGateway({
       apiKey: KEY_A,
       baseUrl: BASE,
       fetchImpl: routes() as unknown as typeof fetch,
@@ -229,7 +229,7 @@ describe('call scopes', () => {
     const disabled = texts(await gw.callTool('get_item', { itemId: 'i1' })).join(' ');
     const write = texts(await gw.callTool('create_item', { name: 'n' })).join(' ');
     for (const text of [disabled, write]) {
-      expect(text).not.toMatch(/EXAMPLE_/);
+      expect(text).not.toMatch(/SYNSBASEN_/);
       expect(text).toMatch(/host/);
     }
   });

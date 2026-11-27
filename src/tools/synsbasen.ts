@@ -5,13 +5,13 @@ import {
   UNTRUSTED_CONTENT_NOTE,
   UNTRUSTED_RESULT_NOTE,
   WRITE_TOOL_ANNOTATIONS,
-} from '../example/annotations.js';
-import { assertAuditLogWritable, auditTarget, newRequestId, writeAuditEvent } from '../example/audit.js';
-import { readOnlyClient, type UpstreamClient } from '../example/client.js';
+} from '../synsbasen/annotations.js';
+import { assertAuditLogWritable, auditTarget, newRequestId, writeAuditEvent } from '../synsbasen/audit.js';
+import { readOnlyClient, type UpstreamClient } from '../synsbasen/client.js';
 import type { ActAs } from '../act-as.js';
 import { formatUnknownError, type SecretRedactor } from '../errors.js';
-import { createItem, getItem } from '../example/items.js';
-import { checkInputPolicy, checkToolPolicy, isToolDisabled, redactInScope, runInCallScope, validatePolicyConfig } from '../example/policy.js';
+import { createItem, getItem } from '../synsbasen/items.js';
+import { checkInputPolicy, checkToolPolicy, isToolDisabled, redactInScope, runInCallScope, validatePolicyConfig } from '../synsbasen/policy.js';
 
 const MAX_ID_LENGTH = 200;
 const idSchema = z.string().trim().min(1).max(MAX_ID_LENGTH);
@@ -30,7 +30,7 @@ export interface UpstreamOperation {
   path: string;
 }
 
-/** A client that carries the redactor of its instance (ExampleClient does). */
+/** A client that carries the redactor of its instance (SynsbasenClient does). */
 export interface RedactingClient extends UpstreamClient {
   readonly redactor: SecretRedactor;
 }
@@ -40,7 +40,7 @@ export interface RedactingClient extends UpstreamClient {
  * point: same input schema, same handler, same policy and audit path.
  */
 export interface ToolDefinition<S extends z.ZodRawShape = z.ZodRawShape> {
-  /** MCP tool name (`example_*`). The gateway exposes it without the prefix. */
+  /** MCP tool name (`synsbasen_*`). The gateway exposes it without the prefix. */
   name: string;
   title: string;
   description: string;
@@ -79,10 +79,10 @@ function defineTool<S extends z.ZodRawShape>(definition: Omit<ToolDefinition<S>,
   } as unknown as ToolDefinition;
 }
 
-export const EXAMPLE_TOOLS: ToolDefinition[] = [
+export const SYNSBASEN_TOOLS: ToolDefinition[] = [
   defineTool({
-    name: 'example_get_item',
-    title: 'Get Item (Example)',
+    name: 'synsbasen_get_item',
+    title: 'Get Item (Synsbasen)',
     description: 'Fetch one item by id, optionally with its history.',
     inputShape: {
       itemId: idSchema.describe('Item id.'),
@@ -98,8 +98,8 @@ export const EXAMPLE_TOOLS: ToolDefinition[] = [
     handler: async (client, input) => getItem(client, input),
   }),
   defineTool({
-    name: 'example_create_item',
-    title: 'Create Item (Example)',
+    name: 'synsbasen_create_item',
+    title: 'Create Item (Synsbasen)',
     description:
       'Create a new item. Requires write access on this instance; confirm with the user before creating.',
     inputShape: {
@@ -115,12 +115,12 @@ export const EXAMPLE_TOOLS: ToolDefinition[] = [
 ];
 
 export function findTool(name: string): ToolDefinition | undefined {
-  return EXAMPLE_TOOLS.find(tool => tool.name === name);
+  return SYNSBASEN_TOOLS.find(tool => tool.name === name);
 }
 
 /** Validate the tool policy environment. Cheap; runs for every server instance. */
 export function validateToolConfig(): void {
-  validatePolicyConfig(EXAMPLE_TOOLS.map(tool => tool.name));
+  validatePolicyConfig(SYNSBASEN_TOOLS.map(tool => tool.name));
 }
 
 /**
@@ -134,9 +134,9 @@ export function validateStartupConfig(): void {
   assertAuditLogWritable();
 }
 
-/** Tools enabled on this instance (EXAMPLE_DISABLED_TOOLS removes them entirely). */
+/** Tools enabled on this instance (SYNSBASEN_DISABLED_TOOLS removes them entirely). */
 export function enabledTools(): ToolDefinition[] {
-  return EXAMPLE_TOOLS.filter(tool => !isToolDisabled(tool.name));
+  return SYNSBASEN_TOOLS.filter(tool => !isToolDisabled(tool.name));
 }
 
 export function registerTools(server: McpServer, client: RedactingClient): void {

@@ -1,8 +1,8 @@
 // Failure metadata on gateway error results: the upstream API's HTTP status and its request id (a UUID or hex id
 // only), for a host that counts failures without reading their text. Never the body, the vendor's code or message.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { failureMetadata, ExampleHttpError, requestIdFrom, vendorRequestId } from '../src/errors.js';
-import { createExampleGateway } from '../src/gateway.js';
+import { failureMetadata, SynsbasenHttpError, requestIdFrom, vendorRequestId } from '../src/errors.js';
+import { createSynsbasenGateway } from '../src/gateway.js';
 import { BASE } from './helpers.js';
 
 const KEY = 'tttt-gggg-wwww-vvvv-1';
@@ -11,7 +11,7 @@ const originalEnv = { ...process.env };
 
 beforeEach(() => {
   for (const name of Object.keys(process.env)) {
-    if (name.startsWith('EXAMPLE_')) delete process.env[name];
+    if (name.startsWith('SYNSBASEN_')) delete process.env[name];
   }
 });
 
@@ -22,7 +22,7 @@ afterEach(() => {
 function gatewayAnswering(status: number, headers: Record<string, string>, body: unknown = { message: 'Customer Jane Doe not found', code: 'E_NOPE' }) {
   const fetchImpl = (async () =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } })) as typeof fetch;
-  return createExampleGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl, retryBudgetMs: 0 });
+  return createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl, retryBudgetMs: 0 });
 }
 
 describe('vendorRequestId', () => {
@@ -41,7 +41,7 @@ describe('vendorRequestId', () => {
       '',
       'abc123',
       'Jane Doe',
-      'jane@example.com',
+      'jane@synsbasen.com',
       'req_8f3a9c2d1e',
       'deadbeef deadbeef',
       '0101901234',
@@ -68,11 +68,11 @@ describe('vendorRequestId', () => {
   });
 
   it('gives metadata for an HTTP error only', () => {
-    expect(failureMetadata(new ExampleHttpError({ status: 404, url: `${BASE}/items/1`, requestId: UUID }))).toEqual({
+    expect(failureMetadata(new SynsbasenHttpError({ status: 404, url: `${BASE}/items/1`, requestId: UUID }))).toEqual({
       httpStatus: 404,
       requestId: UUID,
     });
-    expect(failureMetadata(new ExampleHttpError({ status: 500, url: `${BASE}/items/1`, requestId: 'Jane Doe' }))).toEqual({
+    expect(failureMetadata(new SynsbasenHttpError({ status: 500, url: `${BASE}/items/1`, requestId: 'Jane Doe' }))).toEqual({
       httpStatus: 500,
     });
     expect(failureMetadata(new Error('boom'))).toBeUndefined();
@@ -91,18 +91,18 @@ describe('gateway error results', () => {
   });
 
   it('carry the status alone when the request id is not in the form of one', async () => {
-    const result = await gatewayAnswering(422, { 'x-request-id': 'Jane Doe <jane@example.com>' }).callTool('get_item', {
+    const result = await gatewayAnswering(422, { 'x-request-id': 'Jane Doe <jane@synsbasen.com>' }).callTool('get_item', {
       itemId: 'item-1',
     });
     expect(result.failure).toEqual({ httpStatus: 422 });
-    expect(JSON.stringify(result)).not.toContain('jane@example.com');
+    expect(JSON.stringify(result)).not.toContain('jane@synsbasen.com');
   });
 
   it('drop a request id that holds a piece of the key', async () => {
     // The key's own hex-looking piece as the id: redaction changes it, and the changed value is no id.
     const fetchImpl = (async () =>
       new Response('{}', { status: 500, headers: { 'x-request-id': 'deadbeef00112233' } })) as typeof fetch;
-    const gw = createExampleGateway({ apiKey: 'deadbeef00112233-key-0', baseUrl: BASE, fetchImpl, retryBudgetMs: 0 });
+    const gw = createSynsbasenGateway({ apiKey: 'deadbeef00112233-key-0', baseUrl: BASE, fetchImpl, retryBudgetMs: 0 });
     const result = await gw.callTool('get_item', { itemId: 'item-1' });
     expect(result.failure).toEqual({ httpStatus: 500 });
     expect(JSON.stringify(result)).not.toContain('deadbeef0011');
@@ -112,9 +112,9 @@ describe('gateway error results', () => {
     const fetchImpl = (async () =>
       new Response(null, {
         status: 302,
-        headers: { location: 'https://elsewhere.test/jane@example.com', 'x-request-id': UUID },
+        headers: { location: 'https://elsewhere.test/jane@synsbasen.com', 'x-request-id': UUID },
       })) as typeof fetch;
-    const gw = createExampleGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl, retryBudgetMs: 0 });
+    const gw = createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl, retryBudgetMs: 0 });
     const result = await gw.callTool('get_item', { itemId: 'item-1' });
     expect(result.isError).toBe(true);
     expect(result.failure).toEqual({ httpStatus: 302, requestId: UUID });
@@ -125,7 +125,7 @@ describe('gateway error results', () => {
     const gw = gatewayAnswering(200, {});
     expect((await gw.callTool('get_item', {})).failure).toBeUndefined();
     expect((await gw.callTool('no_such_tool', {})).failure).toBeUndefined();
-    const offline = createExampleGateway({
+    const offline = createSynsbasenGateway({
       apiKey: KEY,
       baseUrl: BASE,
       retryBudgetMs: 0,

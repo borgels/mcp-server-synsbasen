@@ -5,7 +5,7 @@
 // it where a number or a switch was expected.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FRAGMENT_LENGTH, MAX_REDACT_DEPTH, redactDeep, SecretRedactor } from '../src/errors.js';
-import { createExampleGateway, type GatewayToolResult } from '../src/gateway.js';
+import { createSynsbasenGateway, type GatewayToolResult } from '../src/gateway.js';
 import { BASE, gateway } from './helpers.js';
 
 const KEY = `tenant"a\\kEy-${'Q7'.repeat(10)}-ZZtop-0123456789`;
@@ -14,7 +14,7 @@ const originalEnv = { ...process.env };
 
 beforeEach(() => {
   for (const name of Object.keys(process.env)) {
-    if (name.startsWith('EXAMPLE_')) delete process.env[name];
+    if (name.startsWith('SYNSBASEN_')) delete process.env[name];
   }
 });
 
@@ -85,7 +85,7 @@ const upstream: typeof fetch = async (input, init) => {
 describe('no piece of the key leaves an instance', () => {
   it('holds for every channel: results, errors, nested failures and audit records', async () => {
     const records: unknown[] = [];
-    const gw = createExampleGateway({
+    const gw = createSynsbasenGateway({
       apiKey: KEY,
       baseUrl: BASE,
       fetchImpl: upstream,
@@ -103,8 +103,8 @@ describe('no piece of the key leaves an instance', () => {
     results.push(await gw.callTool(`get_item ${KEY}`, {}), await gw.callTool('get_item', { itemId: 'x', [KEY]: FRAGMENT }));
 
     expect(results[0]?.isError).toBeUndefined();
-    expect(combined.structuredContent).toMatchObject({ history: { error: 'Example API request failed with HTTP 401' } });
-    expect(redirected.structuredContent).toMatchObject({ history: { error: 'Example API request failed.' } });
+    expect(combined.structuredContent).toMatchObject({ history: { error: 'Synsbasen API request failed with HTTP 401' } });
+    expect(redirected.structuredContent).toMatchObject({ history: { error: 'Synsbasen API request failed.' } });
     expect(records.length).toBeGreaterThan(10);
     expect(leaks(results)).toEqual([]);
     expect(leaks(records)).toEqual([]);
@@ -112,11 +112,11 @@ describe('no piece of the key leaves an instance', () => {
 
   it('holds for errors about the environment, with or without an instance', async () => {
     const answers: unknown[] = [];
-    for (const name of ['EXAMPLE_ENABLE_WRITES', 'EXAMPLE_DISABLED_TOOLS', 'EXAMPLE_TIMEOUT_MS', 'EXAMPLE_MAX_CONCURRENCY', 'EXAMPLE_MAX_RESPONSE_BYTES']) {
+    for (const name of ['SYNSBASEN_ENABLE_WRITES', 'SYNSBASEN_DISABLED_TOOLS', 'SYNSBASEN_TIMEOUT_MS', 'SYNSBASEN_MAX_CONCURRENCY', 'SYNSBASEN_MAX_RESPONSE_BYTES']) {
       process.env[name] = KEY;
       try {
         // Without a host policy the environment applies: the bad value fails at creation or at the call.
-        const gw = createExampleGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: upstream });
+        const gw = createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: upstream });
         answers.push(await gw.callTool('create_item', { name: 'x' }));
       } catch (error) {
         answers.push((error as Error).message);
@@ -142,7 +142,7 @@ describe('redactDeep', () => {
 
 describe('the data in the text block', () => {
   it('carries the redacted structured content as compact JSON after the summary', async () => {
-    const gw = createExampleGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: upstream, maxAttempts: 1 });
+    const gw = createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: upstream, maxAttempts: 1 });
     const result = await gw.callTool('get_item', { itemId: 'echo' });
     expect(result.isError).toBeUndefined();
     expect(result.content).toHaveLength(1);
@@ -165,7 +165,7 @@ describe('the data in the text block', () => {
   });
 
   it('leaves error results with their text only', async () => {
-    const gw = createExampleGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: upstream, maxAttempts: 1 });
+    const gw = createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: upstream, maxAttempts: 1 });
     const result = await gw.callTool('get_item', { itemId: 'error' });
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toBeUndefined();

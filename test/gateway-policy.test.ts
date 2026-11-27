@@ -2,16 +2,16 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createExampleGateway } from '../src/gateway.js';
+import { createSynsbasenGateway } from '../src/gateway.js';
 import { BASE, stubFetch, texts } from './helpers.js';
 
 const originalEnv = { ...process.env };
 let dir: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'example-policy-'));
+  dir = mkdtempSync(join(tmpdir(), 'synsbasen-policy-'));
   for (const name of Object.keys(process.env)) {
-    if (name.startsWith('EXAMPLE_')) {
+    if (name.startsWith('SYNSBASEN_')) {
       delete process.env[name];
     }
   }
@@ -53,13 +53,13 @@ async function envReads(work: () => Promise<void>): Promise<Set<string>> {
 
 describe('instance policy from the host', () => {
   it('reads no policy or audit variable from the environment', async () => {
-    process.env.EXAMPLE_ENABLE_WRITES = 'true';
-    process.env.EXAMPLE_DISABLED_TOOLS = 'get_item';
-    process.env.EXAMPLE_AUDIT_LOG = join(dir, 'audit.jsonl');
-    process.env.EXAMPLE_ALLOW_CUSTOM_BASE_URL = 'true';
+    process.env.SYNSBASEN_ENABLE_WRITES = 'true';
+    process.env.SYNSBASEN_DISABLED_TOOLS = 'get_item';
+    process.env.SYNSBASEN_AUDIT_LOG = join(dir, 'audit.jsonl');
+    process.env.SYNSBASEN_ALLOW_CUSTOM_BASE_URL = 'true';
 
     const reads = await envReads(async () => {
-      const gw = createExampleGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: routes() as unknown as typeof fetch, policy: {} });
+      const gw = createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: routes() as unknown as typeof fetch, policy: {} });
       expect(gw.tools.map(tool => tool.name)).toContain('get_item');
       const read = await gw.callTool('get_item', { itemId: 'i1' });
       expect(read.isError).toBeUndefined();
@@ -68,7 +68,7 @@ describe('instance policy from the host', () => {
       expect(texts(write).join(' ')).toMatch(/host has not enabled writes/);
     });
 
-    for (const name of ['EXAMPLE_ENABLE_WRITES', 'EXAMPLE_DISABLED_TOOLS', 'EXAMPLE_AUDIT_LOG', 'EXAMPLE_ALLOW_CUSTOM_BASE_URL']) {
+    for (const name of ['SYNSBASEN_ENABLE_WRITES', 'SYNSBASEN_DISABLED_TOOLS', 'SYNSBASEN_AUDIT_LOG', 'SYNSBASEN_ALLOW_CUSTOM_BASE_URL']) {
       expect(reads.has(name), name).toBe(false);
     }
     expect(existsSync(join(dir, 'audit.jsonl'))).toBe(false);
@@ -76,8 +76,8 @@ describe('instance policy from the host', () => {
 
   it('keeps two instances in one process apart', async () => {
     const fetchImpl = routes() as unknown as typeof fetch;
-    const a = createExampleGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl, policy: { disabledTools: ['get_item'] } });
-    const b = createExampleGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl, policy: { enableWrites: true } });
+    const a = createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl, policy: { disabledTools: ['get_item'] } });
+    const b = createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl, policy: { enableWrites: true } });
 
     expect(a.tools.map(tool => tool.name)).not.toContain('get_item');
     expect(b.tools.map(tool => tool.name)).toContain('get_item');
@@ -93,7 +93,7 @@ describe('instance policy from the host', () => {
 
   it('sends audit records to the host and refuses a write whose start record is refused', async () => {
     const records: Array<Record<string, unknown>> = [];
-    const gw = createExampleGateway({
+    const gw = createSynsbasenGateway({
       apiKey: KEY,
       baseUrl: BASE,
       fetchImpl: routes() as unknown as typeof fetch,
@@ -106,7 +106,7 @@ describe('instance policy from the host', () => {
     ]);
 
     const fetchImpl = routes();
-    const refusing = createExampleGateway({
+    const refusing = createSynsbasenGateway({
       apiKey: KEY,
       baseUrl: BASE,
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -124,7 +124,7 @@ describe('instance policy from the host', () => {
 
   it('rejects an unclear policy when the instance is created', () => {
     const create = (policy: unknown) => () =>
-      createExampleGateway({ apiKey: KEY, baseUrl: BASE, policy: policy as never });
+      createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, policy: policy as never });
     expect(create({ disabledTools: ['no_such_tool'] })).toThrow(/is not a known tool/);
     expect(create({ enableWrites: 'yes' })).toThrow(/enableWrites/);
     expect(create({ audit: 'file.jsonl' })).toThrow(/audit/);
@@ -132,8 +132,8 @@ describe('instance policy from the host', () => {
   });
 
   it('still uses the environment without a host policy', async () => {
-    process.env.EXAMPLE_ENABLE_WRITES = 'true';
-    const gw = createExampleGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: routes() as unknown as typeof fetch });
+    process.env.SYNSBASEN_ENABLE_WRITES = 'true';
+    const gw = createSynsbasenGateway({ apiKey: KEY, baseUrl: BASE, fetchImpl: routes() as unknown as typeof fetch });
     const write = await gw.callTool('create_item', { name: 'n' });
     expect(write.isError).toBeUndefined();
   });

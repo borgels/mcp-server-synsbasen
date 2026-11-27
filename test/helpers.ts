@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { ExampleClient } from '../src/example/client.js';
-import { createExampleGateway } from '../src/gateway.js';
+import { SynsbasenClient } from '../src/synsbasen/client.js';
+import { createSynsbasenGateway } from '../src/gateway.js';
 import { createServer } from '../src/server.js';
 
 export const BASE = 'https://api.vendor.test/v1';
@@ -32,7 +32,7 @@ export function stubFetch(routes: Record<string, Stub>) {
 }
 
 export function makeClient(fetchImpl: unknown) {
-  return new ExampleClient({ apiKey: 'test-api-key', baseUrl: BASE, fetchImpl: fetchImpl as typeof fetch });
+  return new SynsbasenClient({ apiKey: 'test-api-key', baseUrl: BASE, fetchImpl: fetchImpl as typeof fetch });
 }
 
 export async function connect(routes: Record<string, Stub> = {}) {
@@ -46,7 +46,7 @@ export async function connect(routes: Record<string, Stub> = {}) {
 
 export function gateway(routes: Record<string, Stub> = {}) {
   const fetchImpl = stubFetch(routes);
-  const gw = createExampleGateway({
+  const gw = createSynsbasenGateway({
     apiKey: 'tttt-gggg-wwww-vvvv-1',
     baseUrl: BASE,
     fetchImpl: fetchImpl as unknown as typeof fetch,

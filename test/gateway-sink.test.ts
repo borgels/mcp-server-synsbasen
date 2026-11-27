@@ -1,7 +1,7 @@
 // The sink check (README, "Threat model"): nothing that leaves a gateway holds a piece of 6 characters of the key.
-// Every output is checked in its final form; the round-7 counterexamples and keys spliced from real outputs.
+// Every output is checked in its final form; the round-7 countersynsbasens and keys spliced from real outputs.
 import { describe, expect, it } from 'vitest';
-import { createExampleGateway } from '../src/gateway.js';
+import { createSynsbasenGateway } from '../src/gateway.js';
 import { visibleTexts } from '../src/key-admission.js';
 import { BASE } from './helpers.js';
 
@@ -33,9 +33,9 @@ const upstream: typeof fetch = async input => {
 /** Every output of a normal session with this key, or the refusal when the key is not admitted. */
 async function outputs(apiKey: string): Promise<{ refused?: string; outputs: unknown[] }> {
   const records: unknown[] = [];
-  let gw: ReturnType<typeof createExampleGateway>;
+  let gw: ReturnType<typeof createSynsbasenGateway>;
   try {
-    gw = createExampleGateway({
+    gw = createSynsbasenGateway({
       apiKey,
       baseUrl: BASE,
       fetchImpl: upstream,
@@ -56,7 +56,7 @@ async function outputs(apiKey: string): Promise<{ refused?: string; outputs: unk
 }
 
 describe('the sink check', () => {
-  it('holds for the round-7 counterexamples', async () => {
+  it('holds for the round-7 countersynsbasens', async () => {
     for (const apiKey of [
       'riskLevelQz7pX2vK9mWb',
       'Zq7pX2visError9mWb4TnR',
@@ -73,12 +73,12 @@ describe('the sink check', () => {
 
   it('refuses a key that is not printable ASCII before anything is built from it', () => {
     for (const apiKey of ['URI malformedQz7pX2vK9mWb\uD800', 'Zq7pX2vK9mWb4TnRé', 'Zq7pX2 vK9mWb4TnR8y']) {
-      expect(() => createExampleGateway({ apiKey, baseUrl: BASE }), apiKey).toThrow(/key was refused/);
+      expect(() => createSynsbasenGateway({ apiKey, baseUrl: BASE }), apiKey).toThrow(/key was refused/);
     }
   });
 
   it('refuses a key that shares a piece with the tool list', () => {
-    expect(() => createExampleGateway({ apiKey: 'riskLevelQz7pX2vK9mWb', baseUrl: BASE })).toThrow(/key was refused/);
+    expect(() => createSynsbasenGateway({ apiKey: 'riskLevelQz7pX2vK9mWb', baseUrl: BASE })).toThrow(/key was refused/);
   });
 
   it('holds for keys spliced from the outputs of a normal session', async () => {
@@ -108,7 +108,7 @@ describe('the sink check', () => {
 
 describe('failure texts', () => {
   it('replaces texts in failure lists of a successful answer, for reads and writes', async () => {
-    const gw = createExampleGateway({
+    const gw = createSynsbasenGateway({
       apiKey: PLAIN,
       baseUrl: BASE,
       maxAttempts: 1,
@@ -118,7 +118,7 @@ describe('failure texts', () => {
     for (const result of [await gw.callTool('get_item', { itemId: 'x' }), await gw.callTool('create_item', { name: 'n' })]) {
       expect(JSON.stringify(result)).not.toContain('Vendor');
       expect(result.structuredContent).toMatchObject({
-        data: { failures: [{ message: 'Example API request failed.' }], errors: [{ message: 'Example API request failed.' }] },
+        data: { failures: [{ message: 'Synsbasen API request failed.' }], errors: [{ message: 'Synsbasen API request failed.' }] },
       });
     }
   });
@@ -134,7 +134,7 @@ describe('round 8', () => {
     ] as const) {
       let caught: Error | undefined;
       try {
-        createExampleGateway({ apiKey, baseUrl });
+        createSynsbasenGateway({ apiKey, baseUrl });
       } catch (error) {
         caught = error as Error;
       }
@@ -152,7 +152,7 @@ describe('round 8', () => {
       { data: { failures: [{ reason: 'Vendor diagnostic' }], errors: [{ code: 'Vendor diagnostic' }] } },
       { failures: [{ code: 'Vendor diagnostic' }] },
     ]) {
-      const gw = createExampleGateway({
+      const gw = createSynsbasenGateway({
         apiKey: PLAIN,
         baseUrl: BASE,
         maxAttempts: 1,
@@ -161,7 +161,7 @@ describe('round 8', () => {
       });
       for (const result of [await gw.callTool('get_item', { itemId: 'x' }), await gw.callTool('create_item', { name: 'n' })]) {
         expect(JSON.stringify(result)).not.toContain('Vendor');
-        expect(JSON.stringify(result.structuredContent)).toContain('"message":"Example API request failed."');
+        expect(JSON.stringify(result.structuredContent)).toContain('"message":"Synsbasen API request failed."');
       }
     }
   });
@@ -174,7 +174,7 @@ describe('round 8', () => {
       },
       async () => new Response(null, { status: 302, headers: { location: 'https://elsewhere.invalid/' } }),
     ] as Array<typeof fetch>) {
-      const gw = createExampleGateway({ apiKey: PLAIN, baseUrl: ADDRESS, allowCustomBaseUrl: true, maxAttempts: 1, fetchImpl });
+      const gw = createSynsbasenGateway({ apiKey: PLAIN, baseUrl: ADDRESS, allowCustomBaseUrl: true, maxAttempts: 1, fetchImpl });
       const result = await gw.callTool('get_item', { itemId: 'x' });
       expect(result.isError).toBe(true);
       expect(JSON.stringify(result)).not.toContain('vendor-name');

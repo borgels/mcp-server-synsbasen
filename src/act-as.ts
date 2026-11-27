@@ -21,7 +21,7 @@
  *   the user. The server never writes it to its audit (the audit has the
  *   host's `caller`, which the host chooses) and never puts it in a text or
  *   field of its own. Data the system returns is passed on as it is, so a
- *   result can hold the address when the system's own data does (for example
+ *   result can hold the address when the system's own data does (for synsbasen
  *   the person's own user record).
  * - **A malformed `actAs` refuses the call.** It is never dropped silently,
  *   since that would make the call as the key's own user. Only an absent
